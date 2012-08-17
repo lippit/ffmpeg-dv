@@ -279,7 +279,9 @@ static int iec61883_read_header(AVFormatContext *context)
     }
 
     for (; j < nb_ports && port==-1; ++j) {
-        if (raw1394_set_port(dv->raw1394, j)) {
+        raw1394_destroy_handle(dv->raw1394);
+
+        if (!(dv->raw1394 = raw1394_new_handle_on_port(j))) {
             av_log(context, AV_LOG_ERROR, "Failed setting IEEE1394 port.\n");
             goto fail;
         }
@@ -317,6 +319,10 @@ static int iec61883_read_header(AVFormatContext *context)
         av_log(context, AV_LOG_ERROR, "No AV/C devices found.\n");
         goto fail;
     }
+
+    /* Provide bus sanity for multiple connections */
+
+    iec61883_cmp_normalize_output(dv->raw1394, 0xffc0 | dv->node);
 
     /* Find out if device is DV or HDV */
 
