@@ -24,13 +24,16 @@
  * null audio source
  */
 
-#include "internal.h"
-#include "libavutil/audioconvert.h"
-#include "libavutil/opt.h"
+#include <inttypes.h>
+#include <stdio.h>
 
 #include "audio.h"
 #include "avfilter.h"
 #include "internal.h"
+
+#include "libavutil/audioconvert.h"
+#include "libavutil/internal.h"
+#include "libavutil/opt.h"
 
 typedef struct {
     const AVClass *class;
@@ -64,10 +67,8 @@ static int init(AVFilterContext *ctx, const char *args)
     null->class = &anullsrc_class;
     av_opt_set_defaults(null);
 
-    if ((ret = (av_set_options_string(null, args, "=", ":"))) < 0) {
-        av_log(ctx, AV_LOG_ERROR, "Error parsing options string: '%s'\n", args);
+    if ((ret = (av_set_options_string(null, args, "=", ":"))) < 0)
         return ret;
-    }
 
     if ((ret = ff_parse_sample_rate(&null->sample_rate,
                                      null->sample_rate_str, ctx)) < 0)
@@ -127,8 +128,8 @@ AVFilter avfilter_asrc_anullsrc = {
     .inputs      = (const AVFilterPad[]) {{ .name = NULL}},
 
     .outputs     = (const AVFilterPad[]) {{ .name = "default",
-                                      .type = AVMEDIA_TYPE_AUDIO,
-                                      .config_props = config_props,
-                                      .request_frame = request_frame, },
-                                    { .name = NULL}},
+                                            .type = AVMEDIA_TYPE_AUDIO,
+                                            .config_props = config_props,
+                                            .request_frame = request_frame, },
+                                          { .name = NULL}},
 };

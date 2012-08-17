@@ -19,6 +19,7 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include "libavutil/common.h"
 #include "libavutil/lls.h"
 
 #define LPC_USE_DOUBLE
@@ -191,6 +192,9 @@ int ff_lpc_calc_coefs(LPCContext *s,
     } else if (lpc_type == FF_LPC_TYPE_CHOLESKY) {
         LLSModel m[2];
         double var[MAX_LPC_ORDER+1], av_uninit(weight);
+
+        if(lpc_passes <= 0)
+            lpc_passes = 2;
 
         for(pass=0; pass<lpc_passes; pass++){
             av_init_lls(&m[pass&1], max_order);

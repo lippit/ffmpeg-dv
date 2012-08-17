@@ -31,7 +31,9 @@
 
 #include "config.h"
 #include "dsputil.h"
+#include "libavutil/internal.h"
 #include "libavutil/lfg.h"
+#include "libavutil/mem.h"
 #include "libavutil/time.h"
 
 #undef printf
@@ -116,18 +118,12 @@ int main(int argc, char **argv)
     AVCodecContext *ctx;
     int c;
     DSPContext cctx, mmxctx;
-    int flags[2] = { AV_CPU_FLAG_MMX, AV_CPU_FLAG_MMX2 };
-    int flags_size = HAVE_MMX2 ? 2 : 1;
+    int flags[2] = { AV_CPU_FLAG_MMX, AV_CPU_FLAG_MMXEXT };
+    int flags_size = HAVE_MMXEXT ? 2 : 1;
 
-    for(;;) {
-        c = getopt(argc, argv, "h");
-        if (c == -1)
-            break;
-        switch(c) {
-        case 'h':
-            help();
-            return 1;
-        }
+    if (argc > 1) {
+        help();
+        return 1;
     }
 
     printf("ffmpeg motion test\n");

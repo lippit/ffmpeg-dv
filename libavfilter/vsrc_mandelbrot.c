@@ -108,7 +108,7 @@ static const AVOption mandelbrot_options[] = {
 
 AVFILTER_DEFINE_CLASS(mandelbrot);
 
-static av_cold int init(AVFilterContext *ctx, const char *args, void *opaque)
+static av_cold int init(AVFilterContext *ctx, const char *args)
 {
     MBContext *mb = ctx->priv;
     AVRational rate_q;
@@ -117,10 +117,8 @@ static av_cold int init(AVFilterContext *ctx, const char *args, void *opaque)
     mb->class = &mandelbrot_class;
     av_opt_set_defaults(mb);
 
-    if ((err = (av_set_options_string(mb, args, "=", ":"))) < 0) {
-        av_log(ctx, AV_LOG_ERROR, "Error parsing options string: '%s'\n", args);
+    if ((err = (av_set_options_string(mb, args, "=", ":"))) < 0)
         return err;
-    }
     mb->bailout *= mb->bailout;
 
     mb->start_scale /=mb->h;

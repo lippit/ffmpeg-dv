@@ -27,6 +27,7 @@
 
 #include "libavutil/opt.h"
 #include "avcodec.h"
+#include "config.h"
 
 #define OFFSET(x) offsetof(AVCodecContext,x)
 #define DEFAULT 0 //should be NAN but it does not work as it is not a constant in glibc as required by ANSI/ISO C
@@ -46,7 +47,7 @@ static const AVOption options[]={
        "ratecontrol is willing to deviate from the target average bitrate value. This is not related "
        "to min/max bitrate. Lowering tolerance too much has an adverse effect on quality.",
        OFFSET(bit_rate_tolerance), AV_OPT_TYPE_INT, {.dbl = AV_CODEC_DEFAULT_BITRATE*20 }, 1, INT_MAX, V|E},
-{"flags", NULL, OFFSET(flags), AV_OPT_TYPE_FLAGS, {.dbl = DEFAULT }, 0, UINT_MAX, V|A|E|D, "flags"},
+{"flags", NULL, OFFSET(flags), AV_OPT_TYPE_FLAGS, {.dbl = DEFAULT }, 0, UINT_MAX, V|A|S|E|D, "flags"},
 {"mv4", "use four motion vector by macroblock (mpeg4)", 0, AV_OPT_TYPE_CONST, {.dbl = CODEC_FLAG_4MV }, INT_MIN, INT_MAX, V|E, "flags"},
 {"qpel", "use 1/4 pel motion compensation", 0, AV_OPT_TYPE_CONST, {.dbl = CODEC_FLAG_QPEL }, INT_MIN, INT_MAX, V|E, "flags"},
 {"loop", "use loop filter", 0, AV_OPT_TYPE_CONST, {.dbl = CODEC_FLAG_LOOP_FILTER }, INT_MIN, INT_MAX, V|E, "flags"},
@@ -324,6 +325,10 @@ static const AVOption options[]={
 {"aac_low", NULL, 0, AV_OPT_TYPE_CONST, {.dbl = FF_PROFILE_AAC_LOW }, INT_MIN, INT_MAX, A|E, "profile"},
 {"aac_ssr", NULL, 0, AV_OPT_TYPE_CONST, {.dbl = FF_PROFILE_AAC_SSR }, INT_MIN, INT_MAX, A|E, "profile"},
 {"aac_ltp", NULL, 0, AV_OPT_TYPE_CONST, {.dbl = FF_PROFILE_AAC_LTP }, INT_MIN, INT_MAX, A|E, "profile"},
+{"aac_he", NULL, 0, AV_OPT_TYPE_CONST, {.dbl = FF_PROFILE_AAC_HE }, INT_MIN, INT_MAX, A|E, "profile"},
+{"aac_he_v2", NULL, 0, AV_OPT_TYPE_CONST, {.dbl = FF_PROFILE_AAC_HE_V2 }, INT_MIN, INT_MAX, A|E, "profile"},
+{"aac_ld", NULL, 0, AV_OPT_TYPE_CONST, {.dbl = FF_PROFILE_AAC_LD }, INT_MIN, INT_MAX, A|E, "profile"},
+{"aac_eld", NULL, 0, AV_OPT_TYPE_CONST, {.dbl = FF_PROFILE_AAC_ELD }, INT_MIN, INT_MAX, A|E, "profile"},
 {"dts", NULL, 0, AV_OPT_TYPE_CONST, {.dbl = FF_PROFILE_DTS }, INT_MIN, INT_MAX, A|E, "profile"},
 {"dts_es", NULL, 0, AV_OPT_TYPE_CONST, {.dbl = FF_PROFILE_DTS_ES }, INT_MIN, INT_MAX, A|E, "profile"},
 {"dts_96_24", NULL, 0, AV_OPT_TYPE_CONST, {.dbl = FF_PROFILE_DTS_96_24 }, INT_MIN, INT_MAX, A|E, "profile"},
@@ -400,6 +405,12 @@ static const AVOption options[]={
 {"s32", "32-bit signed integer",  0, AV_OPT_TYPE_CONST, {.dbl = AV_SAMPLE_FMT_S32 }, INT_MIN, INT_MAX, A|D, "request_sample_fmt"},
 {"flt", "32-bit float",           0, AV_OPT_TYPE_CONST, {.dbl = AV_SAMPLE_FMT_FLT }, INT_MIN, INT_MAX, A|D, "request_sample_fmt"},
 {"dbl", "64-bit double",          0, AV_OPT_TYPE_CONST, {.dbl = AV_SAMPLE_FMT_DBL }, INT_MIN, INT_MAX, A|D, "request_sample_fmt"},
+{"u8p" , "8-bit unsigned integer planar", 0, AV_OPT_TYPE_CONST, {.dbl = AV_SAMPLE_FMT_U8P  }, INT_MIN, INT_MAX, A|D, "request_sample_fmt"},
+{"s16p", "16-bit signed integer planar",  0, AV_OPT_TYPE_CONST, {.dbl = AV_SAMPLE_FMT_S16P }, INT_MIN, INT_MAX, A|D, "request_sample_fmt"},
+{"s32p", "32-bit signed integer planar",  0, AV_OPT_TYPE_CONST, {.dbl = AV_SAMPLE_FMT_S32P }, INT_MIN, INT_MAX, A|D, "request_sample_fmt"},
+{"fltp", "32-bit float planar",           0, AV_OPT_TYPE_CONST, {.dbl = AV_SAMPLE_FMT_FLTP }, INT_MIN, INT_MAX, A|D, "request_sample_fmt"},
+{"dblp", "64-bit double planar",          0, AV_OPT_TYPE_CONST, {.dbl = AV_SAMPLE_FMT_DBLP }, INT_MIN, INT_MAX, A|D, "request_sample_fmt"},
+{"pkt_timebase", NULL, OFFSET(pkt_timebase), AV_OPT_TYPE_RATIONAL, {.dbl = 0 }, 0, INT_MAX, 0},
 {NULL},
 };
 

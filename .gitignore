@@ -4,7 +4,7 @@
 *.def
 *.dll
 *.exe
-*.ho
+*.h.c
 *.lib
 *.pc
 *.so
@@ -47,6 +47,8 @@
 /tests/videogen
 /tests/vsynth1/
 /tools/aviocat
+/tools/ffbisect
+/tools/bisect.need
 /tools/cws2fws
 /tools/ffeval
 /tools/graph2dot

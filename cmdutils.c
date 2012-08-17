@@ -168,8 +168,10 @@ void show_help_options(const OptionDef *options, const char *msg, int mask,
 void show_help_children(const AVClass *class, int flags)
 {
     const AVClass *child = NULL;
-    av_opt_show2(&class, NULL, flags, 0);
-    printf("\n");
+    if (class->option) {
+        av_opt_show2(&class, NULL, flags, 0);
+        printf("\n");
+    }
 
     while (child = av_opt_child_class_next(class, child))
         show_help_children(child, flags);
@@ -190,6 +192,7 @@ static const OptionDef *find_option(const OptionDef *po, const char *name)
 
 #if defined(_WIN32) && !defined(__MINGW32CE__)
 #include <windows.h>
+#include <shellapi.h>
 /* Will be leaked on exit */
 static char** win32_argv_utf8 = NULL;
 static int win32_argc = 0;
@@ -654,8 +657,9 @@ static void print_program_info(int flags, int level)
         av_log(NULL, level, " Copyright (c) %d-%d the FFmpeg developers",
                program_birth_year, this_year);
     av_log(NULL, level, "\n");
-    av_log(NULL, level, "%sbuilt on %s %s with %s %s\n",
-           indent, __DATE__, __TIME__, CC_TYPE, CC_VERSION);
+    av_log(NULL, level, "%sbuilt on %s %s with %s\n",
+           indent, __DATE__, __TIME__, CC_IDENT);
+
     av_log(NULL, level, "%sconfiguration: " FFMPEG_CONFIGURATION "\n", indent);
 }
 
@@ -812,17 +816,20 @@ int opt_codecs(const char *opt, const char *arg)
     AVCodec *p = NULL, *p2;
     const char *last_name;
     printf("Codecs:\n"
-           " D...... = Decoding supported\n"
-           " .E..... = Encoding supported\n"
-           " ..V.... = Video codec\n"
-           " ..A.... = Audio codec\n"
-           " ..S.... = Subtitle codec\n"
-           " ...S... = Supports draw_horiz_band\n"
-           " ....D.. = Supports direct rendering method 1\n"
-           " .....T. = Supports weird frame truncation\n"
-           " ......F = Supports frame-based multi-threading\n"
-           " ......S = Supports slice-based multi-threading\n"
-           " ......B = Supports both frame-based and slice-based multi-threading\n"
+           " D....... = Decoding supported\n"
+           " .E...... = Encoding supported\n"
+           " ..V..... = Video codec\n"
+           " ..A..... = Audio codec\n"
+           " ..S..... = Subtitle codec\n"
+           " ...S.... = Supports draw_horiz_band\n"
+           " ....D... = Supports direct rendering method 1\n"
+           " .....T.. = Supports weird frame truncation\n"
+           " ......F. = Supports frame-based multi-threaded decoding\n"
+           " ......S. = Supports slice-based multi-threaded decoding\n"
+           " ......B. = Supports both frame-based and slice-based multi-threaded decoding\n"
+           " .......F = Supports frame-based multi-threaded encoding\n"
+           " .......S = Supports slice-based multi-threaded encoding\n"
+           " .......B = Supports both frame-based and slice-based multi-threaded encoding\n"
            " --------\n");
     last_name= "000";
     for (;;) {
@@ -849,15 +856,21 @@ int opt_codecs(const char *opt, const char *arg)
             break;
         last_name = p2->name;
 
-        printf(" %s%s%c%s%s%s%s %-15s %s",
+        printf(" %s%s%c%s%s%s%s%s %-15s %s",
                decode ? "D" : (/* p2->decoder ? "d" : */ " "),
                encode ? "E" : " ",
                get_media_type_char(p2->type),
                cap & CODEC_CAP_DRAW_HORIZ_BAND ? "S" : " ",
                cap & CODEC_CAP_DR1 ? "D" : " ",
                cap & CODEC_CAP_TRUNCATED ? "T" : " ",
+               decode ?
                cap & CODEC_CAP_FRAME_THREADS ? cap & CODEC_CAP_SLICE_THREADS ? "B" : "F" :
-                                               cap & CODEC_CAP_SLICE_THREADS ? "S" : " ",
+                                               cap & CODEC_CAP_SLICE_THREADS ? "S" : " "
+               : " ",
+               encode ?
+               cap & CODEC_CAP_FRAME_THREADS ? cap & CODEC_CAP_SLICE_THREADS ? "B" : "F" :
+                                               cap & CODEC_CAP_SLICE_THREADS ? "S" : " "
+               : " ",
                p2->name,
                p2->long_name ? p2->long_name : "");
 #if 0
@@ -1077,65 +1090,13 @@ FILE *get_preset_file(char *filename, size_t filename_size,
 
 int check_stream_specifier(AVFormatContext *s, AVStream *st, const char *spec)
 {
-    if (*spec <= '9' && *spec >= '0') /* opt:index */
-        return strtol(spec, NULL, 0) == st->index;
-    else if (*spec == 'v' || *spec == 'a' || *spec == 's' || *spec == 'd' ||
-             *spec == 't') { /* opt:[vasdt] */
-        enum AVMediaType type;
-
-        switch (*spec++) {
-        case 'v': type = AVMEDIA_TYPE_VIDEO;      break;
-        case 'a': type = AVMEDIA_TYPE_AUDIO;      break;
-        case 's': type = AVMEDIA_TYPE_SUBTITLE;   break;
-        case 'd': type = AVMEDIA_TYPE_DATA;       break;
-        case 't': type = AVMEDIA_TYPE_ATTACHMENT; break;
-        default:  av_assert0(0);
-        }
-        if (type != st->codec->codec_type)
-            return 0;
-        if (*spec++ == ':') { /* possibly followed by :index */
-            int i, index = strtol(spec, NULL, 0);
-            for (i = 0; i < s->nb_streams; i++)
-                if (s->streams[i]->codec->codec_type == type && index-- == 0)
-                   return i == st->index;
-            return 0;
-        }
-        return 1;
-    } else if (*spec == 'p' && *(spec + 1) == ':') {
-        int prog_id, i, j;
-        char *endptr;
-        spec += 2;
-        prog_id = strtol(spec, &endptr, 0);
-        for (i = 0; i < s->nb_programs; i++) {
-            if (s->programs[i]->id != prog_id)
-                continue;
-
-            if (*endptr++ == ':') {
-                int stream_idx = strtol(endptr, NULL, 0);
-                return stream_idx >= 0 &&
-                    stream_idx < s->programs[i]->nb_stream_indexes &&
-                    st->index == s->programs[i]->stream_index[stream_idx];
-            }
-
-            for (j = 0; j < s->programs[i]->nb_stream_indexes; j++)
-                if (st->index == s->programs[i]->stream_index[j])
-                    return 1;
-        }
-        return 0;
-    } else if (*spec == '#') {
-        int sid;
-        char *endptr;
-        sid = strtol(spec + 1, &endptr, 0);
-        if (!*endptr)
-            return st->id == sid;
-    } else if (!*spec) /* empty specifier, matches everything */
-        return 1;
-
-    av_log(s, AV_LOG_ERROR, "Invalid stream specifier: %s.\n", spec);
-    return AVERROR(EINVAL);
+    int ret = avformat_match_stream_specifier(s, st, spec);
+    if (ret < 0)
+        av_log(s, AV_LOG_ERROR, "Invalid stream specifier: %s.\n", spec);
+    return ret;
 }
 
-AVDictionary *filter_codec_opts(AVDictionary *opts, enum CodecID codec_id,
+AVDictionary *filter_codec_opts(AVDictionary *opts, enum AVCodecID codec_id,
                                 AVFormatContext *s, AVStream *st, AVCodec *codec)
 {
     AVDictionary    *ret = NULL;
@@ -1268,7 +1229,7 @@ static int alloc_buffer(FrameBuffer **pool, AVCodecContext *s, FrameBuffer **pbu
     for (i = 0; i < FF_ARRAY_ELEMS(buf->data); i++) {
         const int h_shift = i==0 ? 0 : h_chroma_shift;
         const int v_shift = i==0 ? 0 : v_chroma_shift;
-        if ((s->flags & CODEC_FLAG_EMU_EDGE) || !buf->linesize[1] || !buf->base[i])
+        if ((s->flags & CODEC_FLAG_EMU_EDGE) || !buf->linesize[i] || !buf->base[i])
             buf->data[i] = buf->base[i];
         else
             buf->data[i] = buf->base[i] +

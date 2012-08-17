@@ -24,6 +24,7 @@
  */
 
 #include "libavutil/audioconvert.h"
+#include "libavutil/internal.h"
 #include "libavutil/opt.h"
 
 #include "audio.h"
@@ -55,10 +56,8 @@ static int init(AVFilterContext *ctx, const char *arg)
 
     s->class = &channelsplit_class;
     av_opt_set_defaults(s);
-    if ((ret = av_set_options_string(s, arg, "=", ":")) < 0) {
-        av_log(ctx, AV_LOG_ERROR, "Error parsing options string '%s'.\n", arg);
+    if ((ret = av_set_options_string(s, arg, "=", ":")) < 0)
         return ret;
-    }
     if (!(s->channel_layout = av_get_channel_layout(s->channel_layout_str))) {
         av_log(ctx, AV_LOG_ERROR, "Error parsing channel layout '%s'.\n",
                s->channel_layout_str);
@@ -105,24 +104,29 @@ static int query_formats(AVFilterContext *ctx)
     return 0;
 }
 
-static void filter_samples(AVFilterLink *inlink, AVFilterBufferRef *buf)
+static int filter_samples(AVFilterLink *inlink, AVFilterBufferRef *buf)
 {
     AVFilterContext *ctx = inlink->dst;
-    int i;
+    int i, ret = 0;
 
     for (i = 0; i < ctx->nb_outputs; i++) {
         AVFilterBufferRef *buf_out = avfilter_ref_buffer(buf, ~AV_PERM_WRITE);
 
-        if (!buf_out)
-            return;
+        if (!buf_out) {
+            ret = AVERROR(ENOMEM);
+            break;
+        }
 
         buf_out->data[0] = buf_out->extended_data[0] = buf_out->extended_data[i];
         buf_out->audio->channel_layout =
             av_channel_layout_extract_channel(buf->audio->channel_layout, i);
 
-        ff_filter_samples(ctx->outputs[i], buf_out);
+        ret = ff_filter_samples(ctx->outputs[i], buf_out);
+        if (ret < 0)
+            break;
     }
     avfilter_unref_buffer(buf);
+    return ret;
 }
 
 AVFilter avfilter_af_channelsplit = {

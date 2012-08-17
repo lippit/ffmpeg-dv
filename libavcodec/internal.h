@@ -84,6 +84,11 @@ typedef struct AVCodecInternal {
     unsigned int byte_buffer_size;
 
     void *frame_thread_encoder;
+
+    /**
+     * Number of audio samples to skip at the start of the next decoded frame
+     */
+    int skip_samples;
 } AVCodecInternal;
 
 struct AVCodecDefault {
@@ -104,7 +109,7 @@ int ff_is_hwaccel_pix_fmt(enum PixelFormat pix_fmt);
  * @param pix_fmt the pixel format to match
  * @return the hardware accelerated codec, or NULL if none was found.
  */
-AVHWAccel *ff_find_hwaccel(enum CodecID codec_id, enum PixelFormat pix_fmt);
+AVHWAccel *ff_find_hwaccel(enum AVCodecID codec_id, enum PixelFormat pix_fmt);
 
 /**
  * Return the index into tab at which {a,b} match elements {[0],[1]} of tab.
@@ -117,7 +122,7 @@ unsigned int avpriv_toupper4(unsigned int x);
 /**
  * does needed setup of pkt_pts/pos and such for (re)get_buffer();
  */
-void ff_init_buffer_info(AVCodecContext *s, AVFrame *pic);
+void ff_init_buffer_info(AVCodecContext *s, AVFrame *frame);
 
 /**
  * Remove and free all side data from packet.

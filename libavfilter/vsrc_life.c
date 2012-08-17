@@ -219,7 +219,7 @@ static int init_pattern_from_file(AVFilterContext *ctx)
     return 0;
 }
 
-static int init(AVFilterContext *ctx, const char *args, void *opaque)
+static int init(AVFilterContext *ctx, const char *args)
 {
     LifeContext *life = ctx->priv;
     AVRational frame_rate;
@@ -228,10 +228,8 @@ static int init(AVFilterContext *ctx, const char *args, void *opaque)
     life->class = &life_class;
     av_opt_set_defaults(life);
 
-    if ((ret = av_set_options_string(life, args, "=", ":")) < 0) {
-        av_log(ctx, AV_LOG_ERROR, "Error parsing options string: '%s'\n", args);
+    if ((ret = av_set_options_string(life, args, "=", ":")) < 0)
         return ret;
-    }
 
     if ((ret = av_parse_video_rate(&frame_rate, life->rate)) < 0) {
         av_log(ctx, AV_LOG_ERROR, "Invalid frame rate: %s\n", life->rate);
@@ -291,7 +289,7 @@ static int init(AVFilterContext *ctx, const char *args, void *opaque)
             return ret;
     }
 
-    av_log(ctx, AV_LOG_INFO,
+    av_log(ctx, AV_LOG_VERBOSE,
            "s:%dx%d r:%d/%d rule:%s stay_rule:%d born_rule:%d stitch:%d seed:%u\n",
            life->w, life->h, frame_rate.num, frame_rate.den,
            life->rule_str, life->stay_rule, life->born_rule, life->stitch,

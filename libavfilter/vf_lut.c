@@ -24,6 +24,7 @@
  * value, and apply it to input video.
  */
 
+#include "libavutil/common.h"
 #include "libavutil/eval.h"
 #include "libavutil/opt.h"
 #include "libavutil/pixdesc.h"
@@ -275,7 +276,7 @@ static int config_props(AVFilterLink *inlink)
     return 0;
 }
 
-static void draw_slice(AVFilterLink *inlink, int y, int h, int slice_dir)
+static int draw_slice(AVFilterLink *inlink, int y, int h, int slice_dir)
 {
     AVFilterContext *ctx = inlink->dst;
     LutContext *lut = ctx->priv;
@@ -332,9 +333,22 @@ static void draw_slice(AVFilterLink *inlink, int y, int h, int slice_dir)
         }
     }
 
-    ff_draw_slice(outlink, y, h, slice_dir);
+    return ff_draw_slice(outlink, y, h, slice_dir);
 }
 
+static const AVFilterPad inputs[] = {
+    { .name            = "default",
+      .type            = AVMEDIA_TYPE_VIDEO,
+      .draw_slice      = draw_slice,
+      .config_props    = config_props,
+      .min_perms       = AV_PERM_READ, },
+    { .name = NULL}
+};
+static const AVFilterPad outputs[] = {
+    { .name            = "default",
+      .type            = AVMEDIA_TYPE_VIDEO, },
+    { .name = NULL}
+};
 #define DEFINE_LUT_FILTER(name_, description_, init_)                   \
     AVFilter avfilter_vf_##name_ = {                                    \
         .name          = #name_,                                        \
@@ -345,15 +359,8 @@ static void draw_slice(AVFilterLink *inlink, int y, int h, int slice_dir)
         .uninit        = uninit,                                        \
         .query_formats = query_formats,                                 \
                                                                         \
-        .inputs    = (const AVFilterPad[]) {{ .name      = "default",   \
-                                        .type            = AVMEDIA_TYPE_VIDEO, \
-                                        .draw_slice      = draw_slice,  \
-                                        .config_props    = config_props, \
-                                        .min_perms       = AV_PERM_READ, }, \
-                                      { .name = NULL}},                 \
-        .outputs   = (const AVFilterPad[]) {{ .name      = "default",   \
-                                        .type            = AVMEDIA_TYPE_VIDEO, }, \
-                                      { .name = NULL}},                 \
+        .inputs        = inputs,                                        \
+        .outputs       = outputs,                                       \
     }
 
 #if CONFIG_LUT_FILTER

@@ -61,10 +61,8 @@ static av_cold int init(AVFilterContext *ctx, const char *args)
     silence->class = &silencedetect_class;
     av_opt_set_defaults(silence);
 
-    if ((ret = av_set_options_string(silence, args, "=", ":")) < 0) {
-        av_log(ctx, AV_LOG_ERROR, "Error parsing options string: '%s'\n", args);
+    if ((ret = av_set_options_string(silence, args, "=", ":")) < 0)
         return ret;
-    }
 
     silence->noise = strtod(silence->noise_str, &tail);
     if (!strcmp(tail, "dB")) {
@@ -78,7 +76,7 @@ static av_cold int init(AVFilterContext *ctx, const char *args)
     return 0;
 }
 
-static void filter_samples(AVFilterLink *inlink, AVFilterBufferRef *insamples)
+static int filter_samples(AVFilterLink *inlink, AVFilterBufferRef *insamples)
 {
     int i;
     SilenceDetectContext *silence = inlink->dst->priv;
@@ -118,7 +116,7 @@ static void filter_samples(AVFilterLink *inlink, AVFilterBufferRef *insamples)
         }
     }
 
-    ff_filter_samples(inlink->dst->outputs[0], insamples);
+    return ff_filter_samples(inlink->dst->outputs[0], insamples);
 }
 
 static int query_formats(AVFilterContext *ctx)

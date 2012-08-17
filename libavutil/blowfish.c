@@ -294,24 +294,12 @@ static const uint32_t orig_s[4][256] = {
       0xB74E6132, 0xCE77E25B, 0x578FDFE3, 0x3AC372E6 }
 };
 
-static void F(AVBlowfish *ctx, uint32_t *xl, uint32_t *xr, int i)
-{
-    uint32_t Xl, Xr;
-    uint32_t y;
-
-    Xl = *xl;
-    Xr = *xr;
-
-    Xl ^= ctx->p[i];
-    y   = ctx->s[0][(Xl >> 24) & 0xFF];
-    y  += ctx->s[1][(Xl >> 16) & 0xFF];
-    y  ^= ctx->s[2][(Xl >>  8) & 0xFF];
-    y  += ctx->s[3][ Xl        & 0xFF];
-    Xr ^= y;
-
-    *xl = Xr;
-    *xr = Xl;
-}
+#define F(Xl, Xr, P) \
+    Xr ^=((( ctx->s[0][ Xl >> 24        ] \
+           + ctx->s[1][(Xl >> 16) & 0xFF])\
+           ^ ctx->s[2][(Xl >>  8) & 0xFF])\
+           + ctx->s[3][ Xl        & 0xFF])\
+           ^ P;
 
 av_cold void av_blowfish_init(AVBlowfish *ctx, const uint8_t *key, int key_len)
 {
@@ -358,17 +346,21 @@ void av_blowfish_crypt_ecb(AVBlowfish *ctx, uint32_t *xl, uint32_t *xr,
     Xr = *xr;
 
     if (decrypt) {
-        for (i = AV_BF_ROUNDS + 1; i > 1; --i)
-            F(ctx, &Xl, &Xr, i);
+        Xl ^= ctx->p[AV_BF_ROUNDS + 1];
+        for (i = AV_BF_ROUNDS; i > 0; i-=2) {
+            F(Xl, Xr, ctx->p[i  ]);
+            F(Xr, Xl, ctx->p[i-1]);
+        }
 
-        Xl = Xl ^ ctx->p[1];
-        Xr = Xr ^ ctx->p[0];
+        Xr ^= ctx->p[0];
     } else {
-        for (i = 0; i < AV_BF_ROUNDS; ++i)
-            F(ctx, &Xl, &Xr, i);
+        Xl ^= ctx->p[0];
+        for (i = 1; i < AV_BF_ROUNDS+1; i+=2){
+            F(Xl, Xr, ctx->p[i  ]);
+            F(Xr, Xl, ctx->p[i+1]);
+        }
 
-        Xl = Xl ^ ctx->p[AV_BF_ROUNDS];
-        Xr = Xr ^ ctx->p[AV_BF_ROUNDS + 1];
+        Xr ^= ctx->p[AV_BF_ROUNDS + 1];
     }
 
     *xl = Xr;
@@ -381,8 +373,8 @@ void av_blowfish_crypt(AVBlowfish *ctx, uint8_t *dst, const uint8_t *src,
     uint32_t v0, v1;
     int i;
 
-    while (count > 0) {
-        if (decrypt) {
+    if (decrypt) {
+        while (count--) {
             v0 = AV_RB32(src);
             v1 = AV_RB32(src + 4);
 
@@ -396,7 +388,12 @@ void av_blowfish_crypt(AVBlowfish *ctx, uint8_t *dst, const uint8_t *src,
                     dst[i] = dst[i] ^ iv[i];
                 memcpy(iv, src, 8);
             }
-        } else {
+
+            src   += 8;
+            dst   += 8;
+        }
+    } else {
+        while (count--) {
             if (iv) {
                 for (i = 0; i < 8; i++)
                     dst[i] = src[i] ^ iv[i];
@@ -414,11 +411,10 @@ void av_blowfish_crypt(AVBlowfish *ctx, uint8_t *dst, const uint8_t *src,
 
             if (iv)
                 memcpy(iv, dst, 8);
-        }
 
-        src   += 8;
-        dst   += 8;
-        count -= 8;
+            src   += 8;
+            dst   += 8;
+        }
     }
 }
 

@@ -1013,9 +1013,17 @@ static av_always_inline int check_block_inter(SnowContext *s, int mb_x, int mb_y
 static av_always_inline int check_4block_inter(SnowContext *s, int mb_x, int mb_y, int p0, int p1, int ref, int *best_rd){
     const int b_stride= s->b_width << s->block_max_depth;
     BlockNode *block= &s->block[mb_x + mb_y * b_stride];
-    BlockNode backup[4]= {block[0], block[1], block[b_stride], block[b_stride+1]};
+    BlockNode backup[4];
     unsigned value;
     int rd, index;
+
+    /* We don't initialize backup[] during variable declaration, because
+     * that fails to compile on MSVC: "cannot convert from 'BlockNode' to
+     * 'int16_t'". */
+    backup[0] = block[0];
+    backup[1] = block[1];
+    backup[2] = block[b_stride];
+    backup[3] = block[b_stride + 1];
 
     assert(mb_x>=0 && mb_y>=0);
     assert(mb_x<b_stride);
@@ -1530,7 +1538,7 @@ static void update_last_header_values(SnowContext *s){
 }
 
 static int qscale2qlog(int qscale){
-    return rint(QROOT*log(qscale / (float)FF_QP2LAMBDA)/log(2))
+    return rint(QROOT*log2(qscale / (float)FF_QP2LAMBDA))
            + 61*QROOT/8; ///< 64 > 60
 }
 
@@ -1933,11 +1941,15 @@ static const AVClass snowenc_class = {
 AVCodec ff_snow_encoder = {
     .name           = "snow",
     .type           = AVMEDIA_TYPE_VIDEO,
-    .id             = CODEC_ID_SNOW,
+    .id             = AV_CODEC_ID_SNOW,
     .priv_data_size = sizeof(SnowContext),
     .init           = encode_init,
     .encode2        = encode_frame,
     .close          = encode_end,
+    .pix_fmts       = (const enum PixelFormat[]){
+        PIX_FMT_YUV420P, PIX_FMT_YUV410P, PIX_FMT_YUV444P,
+        PIX_FMT_NONE
+    },
     .long_name      = NULL_IF_CONFIG_SMALL("Snow"),
     .priv_class     = &snowenc_class,
 };

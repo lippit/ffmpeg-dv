@@ -256,7 +256,7 @@ static void ring2_test(uint8_t *dst, int dst_linesize, int off)
     }
 }
 
-static av_cold int init(AVFilterContext *ctx, const char *args, void *opaque)
+static av_cold int init(AVFilterContext *ctx, const char *args)
 {
     MPTestContext *test = ctx->priv;
     AVRational frame_rate_q;
@@ -266,10 +266,8 @@ static av_cold int init(AVFilterContext *ctx, const char *args, void *opaque)
     test->class = &mptestsrc_class;
     av_opt_set_defaults(test);
 
-    if ((ret = (av_set_options_string(test, args, "=", ":"))) < 0) {
-        av_log(ctx, AV_LOG_ERROR, "Error parsing options string: '%s'\n", args);
+    if ((ret = (av_set_options_string(test, args, "=", ":"))) < 0)
         return ret;
-    }
 
     if ((ret = av_parse_video_rate(&frame_rate_q, test->rate)) < 0) {
         av_log(ctx, AV_LOG_ERROR, "Invalid frame rate: '%s'\n", test->rate);
@@ -288,7 +286,7 @@ static av_cold int init(AVFilterContext *ctx, const char *args, void *opaque)
     test->frame_nb = 0;
     test->pts = 0;
 
-    av_log(ctx, AV_LOG_INFO, "rate:%d/%d duration:%f\n",
+    av_log(ctx, AV_LOG_VERBOSE, "rate:%d/%d duration:%f\n",
            frame_rate_q.num, frame_rate_q.den,
            duration < 0 ? -1 : test->max_pts * av_q2d(test->time_base));
     init_idct();

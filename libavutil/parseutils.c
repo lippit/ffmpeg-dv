@@ -25,6 +25,7 @@
 
 #include "avstring.h"
 #include "avutil.h"
+#include "common.h"
 #include "eval.h"
 #include "log.h"
 #include "random_seed.h"
@@ -610,6 +611,8 @@ int av_parse_time(int64_t *timeval, const char *timestr, int duration)
                 break;
             microseconds += n * (*q - '0');
         }
+        while (isdigit(*q))
+            q++;
     }
 
     if (duration) {

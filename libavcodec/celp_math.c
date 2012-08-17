@@ -22,11 +22,12 @@
 
 #include <inttypes.h>
 #include <limits.h>
-#include <assert.h>
 
+#include "libavutil/avassert.h"
 #include "avcodec.h"
 #include "mathops.h"
 #include "celp_math.h"
+#include "libavutil/common.h"
 
 #ifdef G729_BITEXACT
 /**
@@ -80,7 +81,7 @@ int16_t ff_cos(uint16_t arg)
     uint8_t offset= arg;
     uint8_t ind = arg >> 8;
 
-    assert(arg < 0x4000);
+    av_assert2(arg < 0x4000);
 
     return FFMAX(base_cos[ind] + ((slope_cos[ind] * offset) >> 12), -0x8000);
 }
@@ -91,7 +92,7 @@ int ff_exp2(uint16_t power)
     uint16_t frac_dx;
     int result;
 
-    assert(power <= 0x7fff);
+    av_assert2(power <= 0x7fff);
 
     frac_x0 = power >> 10;
     frac_dx = (power & 0x03ff) << 5;
@@ -140,7 +141,7 @@ int16_t ff_cos(uint16_t arg)
     uint8_t offset= arg;
     uint8_t ind = arg >> 8;
 
-    assert(arg <= 0x3fff);
+    av_assert2(arg <= 0x3fff);
 
     return tab_cos[ind] + (offset * (tab_cos[ind+1] - tab_cos[ind]) >> 8);
 }
@@ -149,7 +150,7 @@ int ff_exp2(uint16_t power)
 {
     unsigned int result= exp2a[power>>10] + 0x10000;
 
-    assert(power <= 0x7fff);
+    av_assert2(power <= 0x7fff);
 
     result= (result<<3) + ((result*exp2b[(power>>5)&31])>>17);
     return result + ((result*(power&31)*89)>>22);

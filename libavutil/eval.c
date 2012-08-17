@@ -28,6 +28,7 @@
 
 #include <float.h>
 #include "avutil.h"
+#include "common.h"
 #include "eval.h"
 #include "log.h"
 #include "mathematics.h"
@@ -746,6 +747,14 @@ int main(int argc, char **argv)
         "1Gi",
         "st(0, 123)",
         "st(1, 123); ld(1)",
+        "lte(0, 1)",
+        "lte(1, 1)",
+        "lte(1, 0)",
+        "lt(0, 1)",
+        "lt(1, 1)",
+        "gt(1, 0)",
+        "gt(2, 7)",
+        "gte(122, 122)",
         /* compute 1+2+...+N */
         "st(0, 1); while(lte(ld(0), 100), st(1, ld(1)+ld(0));st(0, ld(0)+1)); ld(1)",
         /* compute Fib(N) */
@@ -789,11 +798,10 @@ int main(int argc, char **argv)
         av_expr_parse_and_eval(&d, *expr,
                                const_names, const_values,
                                NULL, NULL, NULL, NULL, NULL, 0, NULL);
-        if(isnan(d)){
+        if (isnan(d))
             printf("'%s' -> nan\n\n", *expr);
-        }else{
+        else
             printf("'%s' -> %f\n\n", *expr, d);
-        }
     }
 
     av_expr_parse_and_eval(&d, "1+(5-2)^(3-1)+1/2+sin(PI)-max(-2.2,-3.1)",

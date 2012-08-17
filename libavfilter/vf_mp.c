@@ -150,7 +150,6 @@ extern const vf_info_t vf_info_geq;
 extern const vf_info_t vf_info_halfpack;
 extern const vf_info_t vf_info_harddup;
 extern const vf_info_t vf_info_hqdn3d;
-extern const vf_info_t vf_info_hue;
 extern const vf_info_t vf_info_il;
 extern const vf_info_t vf_info_ilpack;
 extern const vf_info_t vf_info_ivtc;
@@ -210,7 +209,6 @@ static const vf_info_t* const filters[]={
     &vf_info_geq,
     &vf_info_harddup,
     &vf_info_hqdn3d,
-    &vf_info_hue,
     &vf_info_il,
     &vf_info_ilpack,
     &vf_info_ivtc,
@@ -848,15 +846,17 @@ static int request_frame(AVFilterLink *outlink)
     return ret;
 }
 
-static void start_frame(AVFilterLink *inlink, AVFilterBufferRef *picref)
+static int start_frame(AVFilterLink *inlink, AVFilterBufferRef *picref)
 {
+    return 0;
 }
 
-static void null_draw_slice(AVFilterLink *link, int y, int h, int slice_dir)
+static int null_draw_slice(AVFilterLink *link, int y, int h, int slice_dir)
 {
+    return 0;
 }
 
-static void end_frame(AVFilterLink *inlink)
+static int end_frame(AVFilterLink *inlink)
 {
     MPContext *m = inlink->dst->priv;
     AVFilterBufferRef *inpic  = inlink->cur_buf;
@@ -883,8 +883,7 @@ static void end_frame(AVFilterLink *inlink)
         av_log(m->avfctx, AV_LOG_DEBUG, "put_image() says skip\n");
     }
     free_mp_image(mpi);
-
-    avfilter_unref_buffer(inpic);
+    return 0;
 }
 
 AVFilter avfilter_vf_mp = {

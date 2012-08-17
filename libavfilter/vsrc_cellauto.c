@@ -158,7 +158,7 @@ static int init_pattern_from_file(AVFilterContext *ctx)
     return init_pattern_from_string(ctx);
 }
 
-static int init(AVFilterContext *ctx, const char *args, void *opaque)
+static int init(AVFilterContext *ctx, const char *args)
 {
     CellAutoContext *cellauto = ctx->priv;
     AVRational frame_rate;
@@ -167,10 +167,8 @@ static int init(AVFilterContext *ctx, const char *args, void *opaque)
     cellauto->class = &cellauto_class;
     av_opt_set_defaults(cellauto);
 
-    if ((ret = av_set_options_string(cellauto, args, "=", ":")) < 0) {
-        av_log(ctx, AV_LOG_ERROR, "Error parsing options string: '%s'\n", args);
+    if ((ret = av_set_options_string(cellauto, args, "=", ":")) < 0)
         return ret;
-    }
 
     if ((ret = av_parse_video_rate(&frame_rate, cellauto->rate)) < 0) {
         av_log(ctx, AV_LOG_ERROR, "Invalid frame rate: %s\n", cellauto->rate);
@@ -213,7 +211,7 @@ static int init(AVFilterContext *ctx, const char *args, void *opaque)
         }
     }
 
-    av_log(ctx, AV_LOG_INFO,
+    av_log(ctx, AV_LOG_VERBOSE,
            "s:%dx%d r:%d/%d rule:%d stitch:%d scroll:%d full:%d seed:%u\n",
            cellauto->w, cellauto->h, frame_rate.num, frame_rate.den,
            cellauto->rule, cellauto->stitch, cellauto->scroll, cellauto->start_full,

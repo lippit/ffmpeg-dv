@@ -19,6 +19,7 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include "libavutil/common.h"
 #include "libavutil/pixdesc.h"
 #include "libavutil/rational.h"
 #include "libavutil/audioconvert.h"
@@ -359,7 +360,8 @@ void ff_update_link_current_pts(AVFilterLink *link, int64_t pts)
 {
     if (pts == AV_NOPTS_VALUE)
         return;
-    link->current_pts =  pts; /* TODO use duration */
+    link->current_pts = av_rescale_q(pts, link->time_base, AV_TIME_BASE_Q);
+    /* TODO use duration */
     if (link->graph && link->age_index >= 0)
         ff_avfilter_graph_update_heap(link->graph, link);
 }
@@ -431,12 +433,47 @@ static const char *default_filter_name(void *filter_ctx)
     return ctx->name ? ctx->name : ctx->filter->name;
 }
 
+static void *filter_child_next(void *obj, void *prev)
+{
+    AVFilterContext *ctx = obj;
+    if (!prev && ctx->filter && ctx->filter->priv_class)
+        return ctx->priv;
+    return NULL;
+}
+
+static const AVClass *filter_child_class_next(const AVClass *prev)
+{
+    AVFilter **filter_ptr = NULL;
+
+    /* find the filter that corresponds to prev */
+    while (prev && *(filter_ptr = av_filter_next(filter_ptr)))
+        if ((*filter_ptr)->priv_class == prev)
+            break;
+
+    /* could not find filter corresponding to prev */
+    if (prev && !(*filter_ptr))
+        return NULL;
+
+    /* find next filter with specific options */
+    while (*(filter_ptr = av_filter_next(filter_ptr)))
+        if ((*filter_ptr)->priv_class)
+            return (*filter_ptr)->priv_class;
+    return NULL;
+}
+
 static const AVClass avfilter_class = {
     .class_name = "AVFilter",
     .item_name  = default_filter_name,
     .version    = LIBAVUTIL_VERSION_INT,
     .category   = AV_CLASS_CATEGORY_FILTER,
+    .child_next = filter_child_next,
+    .child_class_next = filter_child_class_next,
 };
+
+const AVClass *avfilter_get_class(void)
+{
+    return &avfilter_class;
+}
 
 int avfilter_open(AVFilterContext **filter_ctx, AVFilter *filter, const char *inst_name)
 {
@@ -554,7 +591,9 @@ int avfilter_init_filter(AVFilterContext *filter, const char *args, void *opaque
 {
     int ret=0;
 
-    if (filter->filter->init)
+    if (filter->filter->init_opaque)
+        ret = filter->filter->init_opaque(filter, args, opaque);
+    else if (filter->filter->init)
         ret = filter->filter->init(filter, args);
     return ret;
 }
