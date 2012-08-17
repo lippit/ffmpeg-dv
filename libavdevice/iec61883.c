@@ -318,6 +318,10 @@ static int iec61883_read_header(AVFormatContext *context)
         goto fail;
     }
 
+    /* Provide bus sanity for multiple connections */
+
+    iec61883_cmp_normalize_output(dv->raw1394, 0xffc0 | dv->node);
+
     /* Find out if device is DV or HDV */
 
     if (dv->type == IEC61883_AUTO) {
