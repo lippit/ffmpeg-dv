@@ -57,6 +57,7 @@ void avfilter_register_all(void)
     REGISTER_FILTER (PAN,         pan,         af);
     REGISTER_FILTER (SILENCEDETECT, silencedetect, af);
     REGISTER_FILTER (VOLUME,      volume,      af);
+    REGISTER_FILTER (VOLUMEDETECT,volumedetect,af);
     REGISTER_FILTER (RESAMPLE,    resample,    af);
 
     REGISTER_FILTER (AEVALSRC,    aevalsrc,    asrc);
@@ -87,6 +88,7 @@ void avfilter_register_all(void)
     REGISTER_FILTER (FIFO,        fifo,        vf);
     REGISTER_FILTER (FORMAT,      format,      vf);
     REGISTER_FILTER (FPS,         fps,         vf);
+    REGISTER_FILTER (FRAMESTEP,   framestep,   vf);
     REGISTER_FILTER (FREI0R,      frei0r,      vf);
     REGISTER_FILTER (GRADFUN,     gradfun,     vf);
     REGISTER_FILTER (HFLIP,       hflip,       vf);

@@ -266,12 +266,25 @@ static av_cold int vp8_init(AVCodecContext *avctx)
         enccfg.g_pass = VPX_RC_ONE_PASS;
 
     if (avctx->rc_min_rate == avctx->rc_max_rate &&
-        avctx->rc_min_rate == avctx->bit_rate)
+        avctx->rc_min_rate == avctx->bit_rate && avctx->bit_rate)
         enccfg.rc_end_usage = VPX_CBR;
     else if (ctx->crf)
         enccfg.rc_end_usage = VPX_CQ;
-    enccfg.rc_target_bitrate = av_rescale_rnd(avctx->bit_rate, 1, 1000,
-                                              AV_ROUND_NEAR_INF);
+
+    if (avctx->bit_rate) {
+        enccfg.rc_target_bitrate = av_rescale_rnd(avctx->bit_rate, 1, 1000,
+                                                AV_ROUND_NEAR_INF);
+    } else {
+        if (enccfg.rc_end_usage == VPX_CQ) {
+            enccfg.rc_target_bitrate = 1000000;
+        } else {
+            avctx->bit_rate = enccfg.rc_target_bitrate * 1000;
+            av_log(avctx, AV_LOG_WARNING,
+                   "Neither bitrate nor constrained quality specified, using default bitrate of %dkbit/sec\n",
+                   enccfg.rc_target_bitrate);
+        }
+    }
+
     if (avctx->qmin > 0)
         enccfg.rc_min_quantizer = avctx->qmin;
     if (avctx->qmax > 0)
