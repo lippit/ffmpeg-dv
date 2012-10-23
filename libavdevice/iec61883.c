@@ -140,7 +140,7 @@ static int iec61883_callback(unsigned char *data, int length,
 
 exit:
 #ifdef THREADS
-    pthread_cond_signal(&dv->cond);
+    pthread_cond_broadcast(&dv->cond);
     pthread_mutex_unlock(&dv->mutex);
 #endif
     return ret;
@@ -171,7 +171,7 @@ static void *iec61883_receive_task(void *opaque)
 #ifdef THREADS
             pthread_mutex_lock(&dv->mutex);
             dv->eof = 1;
-            pthread_cond_signal(&dv->cond);
+            pthread_cond_broadcast(&dv->cond);
             pthread_mutex_unlock(&dv->mutex);
 #else
             dv->eof = 1;
