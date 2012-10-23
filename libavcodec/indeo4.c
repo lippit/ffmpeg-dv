@@ -197,6 +197,7 @@ static int decode_pic_hdr(IVI45DecContext *ctx, AVCodecContext *avctx)
 
     /* decode subdivision of the planes */
     pic_conf.luma_bands = decode_plane_subdivision(&ctx->gb);
+    pic_conf.chroma_bands = 0;
     if (pic_conf.luma_bands)
         pic_conf.chroma_bands = decode_plane_subdivision(&ctx->gb);
     ctx->is_scalable = pic_conf.luma_bands != 1 || pic_conf.chroma_bands != 1;
@@ -624,7 +625,7 @@ static av_cold int decode_init(AVCodecContext *avctx)
     ctx->pic_conf.pic_width  = 0;
     ctx->pic_conf.pic_height = 0;
 
-    avctx->pix_fmt = PIX_FMT_YUV410P;
+    avctx->pix_fmt = AV_PIX_FMT_YUV410P;
 
     ctx->decode_pic_hdr   = decode_pic_hdr;
     ctx->decode_band_hdr  = decode_band_hdr;

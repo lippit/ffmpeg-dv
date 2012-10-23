@@ -33,6 +33,9 @@ int avfilter_copy_frame_props(AVFilterBufferRef *dst, const AVFrame *src)
     dst->pos    = av_frame_get_pkt_pos(src);
     dst->format = src->format;
 
+    av_dict_free(&dst->metadata);
+    av_dict_copy(&dst->metadata, av_frame_get_metadata(src), 0);
+
     switch (dst->type) {
     case AVMEDIA_TYPE_VIDEO:
         dst->video->w                   = src->width;
@@ -42,6 +45,17 @@ int avfilter_copy_frame_props(AVFilterBufferRef *dst, const AVFrame *src)
         dst->video->top_field_first     = src->top_field_first;
         dst->video->key_frame           = src->key_frame;
         dst->video->pict_type           = src->pict_type;
+        av_freep(&dst->video->qp_table);
+        dst->video->qp_table_linesize = 0;
+        if (src->qscale_table) {
+            int qsize = src->qstride ? src->qstride * ((src->height+15)/16) : (src->width+15)/16;
+            dst->video->qp_table = av_malloc(qsize);
+            if (!dst->video->qp_table)
+                return AVERROR(ENOMEM);
+            dst->video->qp_table_linesize = src->qstride;
+            dst->video->qp_table_size     = qsize;
+            memcpy(dst->video->qp_table, src->qscale_table, qsize);
+        }
         break;
     case AVMEDIA_TYPE_AUDIO:
         dst->audio->sample_rate         = src->sample_rate;
@@ -131,7 +145,7 @@ int avfilter_copy_buf_props(AVFrame *dst, const AVFilterBufferRef *src)
             if (!dst->extended_data)
                 return AVERROR(ENOMEM);
             memcpy(dst->extended_data, src->extended_data,
-                   planes * sizeof(dst->extended_data));
+                   planes * sizeof(*dst->extended_data));
         } else
             dst->extended_data = dst->data;
         dst->nb_samples          = src->audio->nb_samples;

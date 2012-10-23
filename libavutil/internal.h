@@ -48,6 +48,12 @@
 #endif
 #endif
 
+#if defined(_MSC_VER) && CONFIG_SHARED
+#    define av_export __declspec(dllimport)
+#else
+#    define av_export
+#endif
+
 #ifndef INT_BIT
 #    define INT_BIT (CHAR_BIT * sizeof(int))
 #endif
@@ -71,8 +77,6 @@
 #define sprintf sprintf_is_forbidden_due_to_security_issues_use_snprintf
 #undef  strcat
 #define strcat strcat_is_forbidden_due_to_security_issues_use_av_strlcat
-#undef  strncpy
-#define strncpy strncpy_is_forbidden_due_to_security_issues_use_av_strlcpy
 #undef  exit
 #define exit exit_is_forbidden
 #undef  printf
@@ -158,7 +162,7 @@
 #   define ONLY_IF_THREADS_ENABLED(x) NULL
 #endif
 
-#if HAVE_MMX && HAVE_INLINE_ASM
+#if HAVE_MMX_INLINE
 /**
  * Empty mmx state.
  * this must be called between any dsp function and float/double code.
@@ -172,8 +176,8 @@ static av_always_inline void emms_c(void)
 #elif HAVE_MMX && HAVE_MM_EMPTY
 #   include <mmintrin.h>
 #   define emms_c _mm_empty
-#else /* HAVE_MMX */
+#else
 #   define emms_c()
-#endif /* HAVE_MMX */
+#endif /* HAVE_MMX_INLINE */
 
 #endif /* AVUTIL_INTERNAL_H */

@@ -187,8 +187,6 @@ static int decode_bmv_frame(const uint8_t *source, int src_len, uint8_t *frame, 
                 memset(dst, val, len);
             }
             break;
-        default:
-            break;
         }
         if (dst == dst_end)
             return 0;
@@ -200,7 +198,7 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *data_size, AVPac
 {
     BMVDecContext * const c = avctx->priv_data;
     int type, scr_off;
-    int i;
+    int i, ret;
     uint8_t *srcptr, *outptr;
 
     c->stream = pkt->data;
@@ -227,7 +225,7 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *data_size, AVPac
             return AVERROR_INVALIDDATA;
         }
         for (i = 0; i < 256; i++)
-            c->pal[i] = 0xFF << 24 | bytestream_get_be24(&c->stream);
+            c->pal[i] = 0xFFU << 24 | bytestream_get_be24(&c->stream);
     }
     if (type & BMV_SCROLL) {
         if (c->stream - pkt->data > pkt->size - 2) {
@@ -239,6 +237,15 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *data_size, AVPac
         scr_off = -640;
     } else {
         scr_off = 0;
+    }
+
+    if (c->pic.data[0])
+        avctx->release_buffer(avctx, &c->pic);
+
+    c->pic.reference = 3;
+    if ((ret = avctx->get_buffer(avctx, &c->pic)) < 0) {
+        av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
+        return ret;
     }
 
     if (decode_bmv_frame(c->stream, pkt->size - (c->stream - pkt->data), c->frame, scr_off)) {
@@ -270,17 +277,11 @@ static av_cold int decode_init(AVCodecContext *avctx)
     BMVDecContext * const c = avctx->priv_data;
 
     c->avctx = avctx;
-    avctx->pix_fmt = PIX_FMT_PAL8;
+    avctx->pix_fmt = AV_PIX_FMT_PAL8;
 
     if (avctx->width != SCREEN_WIDE || avctx->height != SCREEN_HIGH) {
         av_log(avctx, AV_LOG_ERROR, "Invalid dimension %dx%d\n", avctx->width, avctx->height);
         return AVERROR_INVALIDDATA;
-    }
-
-    c->pic.reference = 1;
-    if (avctx->get_buffer(avctx, &c->pic) < 0) {
-        av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
-        return -1;
     }
 
     c->frame = c->frame_base + 640;

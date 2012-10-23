@@ -25,7 +25,6 @@
 #include "get_bits.h"
 #include "ra288.h"
 #include "lpc.h"
-#include "celp_math.h"
 #include "celp_filters.h"
 
 #define MAX_BACKWARD_FILTER_ORDER  36
@@ -74,7 +73,7 @@ static av_cold int ra288_decode_init(AVCodecContext *avctx)
 static void convolve(float *tgt, const float *src, int len, int n)
 {
     for (; n >= 0; n--)
-        tgt[n] = ff_dot_productf(src, src - n, len);
+        tgt[n] = ff_scalarproduct_float_c(src, src - n, len);
 
 }
 
@@ -103,7 +102,7 @@ static void decode(RA288Context *ractx, float gain, int cb_coef)
     for (i=0; i < 5; i++)
         buffer[i] = codetable[cb_coef][i] * sumsum;
 
-    sum = ff_dot_productf(buffer, buffer, 5);
+    sum = ff_scalarproduct_float_c(buffer, buffer, 5);
 
     sum = FFMAX(sum, 5. / (1<<24));
 
@@ -137,6 +136,8 @@ static void do_hybrid_window(RA288Context *ractx,
     LOCAL_ALIGNED(32, float, work, [FFALIGN(MAX_BACKWARD_FILTER_ORDER +
                                             MAX_BACKWARD_FILTER_LEN   +
                                             MAX_BACKWARD_FILTER_NONREC, 16)]);
+
+    av_assert2(order>=0);
 
     ractx->fdsp.vector_fmul(work, window, hist, FFALIGN(order + n + non_rec, 16));
 

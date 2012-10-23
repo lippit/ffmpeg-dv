@@ -79,7 +79,18 @@ display graph.png
 @end example
 
 can be used to create and display an image representing the graph
-described by the @var{GRAPH_DESCRIPTION} string.
+described by the @var{GRAPH_DESCRIPTION} string. Note that this string must be
+a complete self-contained graph, with its inputs and outputs explicitly defined.
+For example if your command line is of the form:
+@example
+ffmpeg -i infile -vf scale=640:360 outfile
+@end example
+your @var{GRAPH_DESCRIPTION} string will need to be of the form:
+@example
+nullsrc,scale=640:360,nullsink
+@end example
+you may also need to set the @var{nullsrc} parameters and add a @var{format}
+filter in order to simulate a specific input file.
 
 @c man end GRAPH2DOT
 
@@ -738,14 +749,17 @@ The filter accepts the following named parameters:
 @table @option
 
 @item compensate
-Enable stretching/squeezing the data to make it match the timestamps.
+Enable stretching/squeezing the data to make it match the timestamps. Disabled
+by default. When disabled, time gaps are covered with silence.
 
 @item min_delta
 Minimum difference between timestamps and audio data (in seconds) to trigger
-adding/dropping samples.
+adding/dropping samples. Default value is 0.1. If you get non-perfect sync with
+this filter, try setting this parameter to 0.
 
 @item max_comp
-Maximum compensation in samples per second.
+Maximum compensation in samples per second. Relevant only with compensate=1.
+Default value 500.
 
 @item first_pts
 Assume the first pts should be this value.
@@ -1107,7 +1121,7 @@ Set the voice to use for the speech synthesis. Default value is
 @code{kal}. See also the @var{list_voices} option.
 @end table
 
-@section Examples
+@subsection Examples
 
 @itemize
 @item
@@ -1124,10 +1138,16 @@ flite=text='So fare thee well, poor devil of a Sub-Sub, whose commentator I am':
 @end example
 
 @item
-Make @file{ffplay} speech the specified text, using @code{flite} and
+Input text to ffmpeg:
+@example
+ffmpeg -f lavfi -i flite=text='So fare thee well, poor devil of a Sub-Sub, whose commentator I am':voice=slt
+@end example
+
+@item
+Make @file{ffplay} speak the specified text, using @code{flite} and
 the @code{lavfi} device:
 @example
-ffplay -f lavfi flite='No more be grieved for which that thou hast done.'
+ffplay -f lavfi flite=text='No more be grieved for which that thou hast done.'
 @end example
 @end itemize
 
@@ -1210,24 +1230,31 @@ using the libass library.
 To enable compilation of this filter you need to configure FFmpeg with
 @code{--enable-libass}.
 
-This filter accepts the syntax: @var{ass_filename}[:@var{options}],
-where @var{ass_filename} is the filename of the ASS file to read, and
-@var{options} is an optional sequence of @var{key}=@var{value} pairs,
-separated by ":".
-
-A description of the accepted options follows.
+This filter accepts the following named options, expressed as a
+sequence of @var{key}=@var{value} pairs, separated by ":".
 
 @table @option
+@item filename, f
+Set the filename of the ASS file to read. It must be specified.
+
 @item original_size
-Specifies the size of the original video, the video for which the ASS file
+Specify the size of the original video, the video for which the ASS file
 was composed. Due to a misdesign in ASS aspect ratio arithmetic, this is
 necessary to correctly scale the fonts if the aspect ratio has been changed.
 @end table
+
+If the first key is not specified, it is assumed that the first value
+specifies the @option{filename}.
 
 For example, to render the file @file{sub.ass} on top of the input
 video, use the command:
 @example
 ass=sub.ass
+@end example
+
+which is equivalent to:
+@example
+ass=filename=sub.ass
 @end example
 
 @section bbox
@@ -1537,6 +1564,43 @@ the current optimal crop area. Defaults to 0.
 This can be useful when channel logos distort the video area. 0
 indicates never reset and return the largest area encountered during
 playback.
+@end table
+
+@section decimate
+
+This filter drops frames that do not differ greatly from the previous
+frame in order to reduce framerate.  The main use of this filter is
+for very-low-bitrate encoding (e.g. streaming over dialup modem), but
+it could in theory be used for fixing movies that were
+inverse-telecined incorrectly.
+
+It accepts the following parameters:
+@var{max}:@var{hi}:@var{lo}:@var{frac}.
+
+@table @option
+
+@item max
+Set the maximum number of consecutive frames which can be dropped (if
+positive), or the minimum interval between dropped frames (if
+negative). If the value is 0, the frame is dropped unregarding the
+number of previous sequentially dropped frames.
+
+Default value is 0.
+
+@item hi, lo, frac
+Set the dropping threshold values.
+
+Values for @var{hi} and @var{lo} are for 8x8 pixel blocks and
+represent actual pixel value differences, so a threshold of 64
+corresponds to 1 unit of difference for each pixel, or the same spread
+out differently over the block.
+
+A frame is a candidate for dropping if no 8x8 blocks differ by more
+than a threshold of @var{hi}, and if no more than @var{frac} blocks (1
+meaning the whole image) differ by more than a threshold of @var{lo}.
+
+Default value for @var{hi} is 64*12, default value for @var{lo} is
+64*5, and default value for @var{frac} is 0.33.
 @end table
 
 @section delogo
@@ -2281,6 +2345,26 @@ Specify the saturation in the [-10,10] range. It accepts a float number and
 defaults to 1.0.
 @end table
 
+The @var{h}, @var{H} and @var{s} parameters are expressions containing the
+following constants:
+
+@table @option
+@item n
+frame count of the input frame starting from 0
+
+@item pts
+presentation timestamp of the input frame expressed in time base units
+
+@item r
+frame rate of the input video, NAN if the input frame rate is unknown
+
+@item t
+timestamp expressed in seconds, NAN if the input timestamp is unknown
+
+@item tb
+time base of the input video
+@end table
+
 The options can also be set using the syntax: @var{hue}:@var{saturation}
 
 In this case @var{hue} is expressed in degrees.
@@ -2311,7 +2395,49 @@ h and s, so the following example will issue an error:
 @example
 hue=PI/2:1
 @end example
+
+@item
+Rotate hue and make the saturation swing between 0
+and 2 over a period of 1 second:
+@example
+hue="H=2*PI*t: s=sin(2*PI*t)+1"
+@end example
+
+@item
+Apply a 3 seconds saturation fade-in effect starting at 0:
+@example
+hue="s=min(t/3\,1)"
+@end example
+
+The general fade-in expression can be written as:
+@example
+hue="s=min(0\, max((t-START)/DURATION\, 1))"
+@end example
+
+@item
+Apply a 3 seconds saturation fade-out effect starting at 5 seconds:
+@example
+hue="s=max(0\, min(1\, (8-t)/3))"
+@end example
+
+The general fade-out expression can be written as:
+@example
+hue="s=max(0\, min(1\, (START+DURATION-t)/DURATION))"
+@end example
+
 @end itemize
+
+@subsection Commands
+
+This filter supports the following command:
+@table @option
+@item reinit
+Modify the hue and/or the saturation of the input video.
+The command accepts the same named options and syntax than when calling the
+filter from the command-line.
+
+If a parameter is omitted, it is kept at its current value.
+@end table
 
 @section idet
 
@@ -2333,14 +2459,10 @@ corresponding pixel component values.
 The @var{lut} filter requires either YUV or RGB pixel formats in
 input, and accepts the options:
 @table @option
-@item c0
-first  pixel component
-@item c1
-second pixel component
-@item c2
-third  pixel component
-@item c3
-fourth pixel component, corresponds to the alpha component
+@item @var{c0} (first  pixel component)
+@item @var{c1} (second pixel component)
+@item @var{c2} (third  pixel component)
+@item @var{c3} (fourth pixel component, corresponds to the alpha component)
 @end table
 
 The exact component associated to each option depends on the format in
@@ -2349,27 +2471,19 @@ input.
 The @var{lutrgb} filter requires RGB pixel formats in input, and
 accepts the options:
 @table @option
-@item r
-red component
-@item g
-green component
-@item b
-blue component
-@item a
-alpha component
+@item @var{r} (red component)
+@item @var{g} (green component)
+@item @var{b} (blue component)
+@item @var{a} (alpha component)
 @end table
 
 The @var{lutyuv} filter requires YUV pixel formats in input, and
 accepts the options:
 @table @option
-@item y
-Y/luminance component
-@item u
-U/Cb component
-@item v
-V/Cr component
-@item a
-alpha component
+@item @var{y} (Y/luminance component)
+@item @var{u} (U/Cb component)
+@item @var{v} (V/Cr component)
+@item @var{a} (alpha component)
 @end table
 
 The expressions can contain the following constants and functions:
@@ -2459,7 +2573,6 @@ the named filter.
 
 The list of the currently supported filters follows:
 @table @var
-@item decimate
 @item denoise3d
 @item detc
 @item dint
@@ -2489,9 +2602,7 @@ The list of the currently supported filters follows:
 @item pullup
 @item qp
 @item rectangle
-@item rotate
 @item sab
-@item smartblur
 @item softpulldown
 @item softskip
 @item spp
@@ -2509,13 +2620,19 @@ of the corresponding MPlayer filters. For detailed instructions check
 the "VIDEO FILTERS" section in the MPlayer manual.
 
 Some examples follow:
+@itemize
+@item
+Adjust gamma, brightness, contrast:
 @example
-# adjust gamma, brightness, contrast
 mp=eq2=1.0:2:0.5
-
-# tweak hue and saturation
-mp=hue=100:-10
 @end example
+
+@item
+Add temporal noise to input video:
+@example
+mp=noise=20t
+@end example
+@end itemize
 
 See also mplayer(1), @url{http://www.mplayerhq.hu/}.
 
@@ -2795,36 +2912,59 @@ The default value of @var{color} is "black".
 
 @end table
 
-Some examples follow:
+@subsection Examples
 
+@itemize
+@item
+Add paddings with color "violet" to the input video. Output video
+size is 640x480, the top-left corner of the input video is placed at
+column 0, row 40:
 @example
-# Add paddings with color "violet" to the input video. Output video
-# size is 640x480, the top-left corner of the input video is placed at
-# column 0, row 40.
 pad=640:480:0:40:violet
+@end example
 
-# pad the input to get an output with dimensions increased bt 3/2,
-# and put the input video at the center of the padded area
+@item
+Pad the input to get an output with dimensions increased by 3/2,
+and put the input video at the center of the padded area:
+@example
 pad="3/2*iw:3/2*ih:(ow-iw)/2:(oh-ih)/2"
+@end example
 
-# pad the input to get a squared output with size equal to the maximum
-# value between the input width and height, and put the input video at
-# the center of the padded area
+@item
+Pad the input to get a squared output with size equal to the maximum
+value between the input width and height, and put the input video at
+the center of the padded area:
+@example
 pad="max(iw\,ih):ow:(ow-iw)/2:(oh-ih)/2"
+@end example
 
-# pad the input to get a final w/h ratio of 16:9
+@item
+Pad the input to get a final w/h ratio of 16:9:
+@example
 pad="ih*16/9:ih:(ow-iw)/2:(oh-ih)/2"
+@end example
 
-# for anamorphic video, in order to set the output display aspect ratio,
-# it is necessary to use sar in the expression, according to the relation:
-# (ih * X / ih) * sar = output_dar
-# X = output_dar / sar
+@item
+In case of anamorphic video, in order to set the output display aspect
+correctly, it is necessary to use @var{sar} in the expression,
+according to the relation:
+@example
+(ih * X / ih) * sar = output_dar
+X = output_dar / sar
+@end example
+
+Thus the previous example needs to be modified to:
+@example
 pad="ih*16/9/sar:ih:(ow-iw)/2:(oh-ih)/2"
+@end example
 
-# double output size and put the input video in the bottom-right
-# corner of the output padded area
+@item
+Double output size and put the input video in the bottom-right
+corner of the output padded area:
+@example
 pad="2*iw:2*ih:ow-iw:oh-ih"
 @end example
+@end itemize
 
 @section pixdesctest
 
@@ -2866,7 +3006,7 @@ pixels will slow things down on a large logo.
 
 @section scale
 
-Scale the input video to @var{width}:@var{height}[:@var{interl}=@{1|-1@}] and/or convert the image format.
+Scale (resize) the input video to @var{width}:@var{height}[:@var{interl}=@{1|-1@}] and/or convert the image format.
 
 The scale filter forces the output display aspect ratio to be the same
 of the input, by changing the output sample aspect ratio.
@@ -3110,16 +3250,34 @@ Keep in mind that the sample aspect ratio set by the @code{setsar}
 filter may be changed by later filters in the filterchain, e.g. if
 another "setsar" or a "setdar" filter is applied.
 
-The @code{setdar} and @code{setsar} filters accept a parameter string
-which represents the wanted aspect ratio.  The parameter can
-be a floating point number string, an expression, or a string of the form
-@var{num}:@var{den}, where @var{num} and @var{den} are the numerator
-and denominator of the aspect ratio. If the parameter is not
-specified, it is assumed the value "0:1".
+The @code{setdar} and @code{setsar} filters accept a string in the
+form @var{num}:@var{den} expressing an aspect ratio, or the following
+named options, expressed as a sequence of @var{key}=@var{value} pairs,
+separated by ":".
+
+@table @option
+@item max
+Set the maximum integer value to use for expressing numerator and
+denominator when reducing the expressed aspect ratio to a rational.
+Default value is @code{100}.
+
+@item r, ratio:
+Set the aspect ratio used by the filter.
+
+The parameter can be a floating point number string, an expression, or
+a string of the form @var{num}:@var{den}, where @var{num} and
+@var{den} are the numerator and denominator of the aspect ratio. If
+the parameter is not specified, it is assumed the value "0".
+In case the form "@var{num}:@var{den}" the @code{:} character should
+be escaped.
+@end table
+
+If the keys are omitted in the named options list, the specifed values
+are assumed to be @var{ratio} and @var{max} in that order.
 
 For example to change the display aspect ratio to 16:9, specify:
 @example
-setdar=16:9
+setdar='16:9'
 @end example
 
 The example above is equivalent to:
@@ -3129,7 +3287,13 @@ setdar=1.77777
 
 To change the sample aspect ratio to 10:11, specify:
 @example
-setsar=10:11
+setsar='10:11'
+@end example
+
+To set a display aspect ratio of 16:9, and specify a maximum integer value of
+1000 in the aspect ratio reduction, use the command:
+@example
+setdar=ratio='16:9':max=1000
 @end example
 
 @section setfield
@@ -3155,106 +3319,6 @@ Mark the frame as top-field-first.
 @item prog
 Mark the frame as progressive.
 @end table
-
-@section asetpts, setpts
-
-Change the PTS (presentation timestamp) of the input frames.
-
-@code{asetpts} works on audio frames, @code{setpts} on video frames.
-
-Accept in input an expression evaluated through the eval API, which
-can contain the following constants:
-
-@table @option
-@item PTS
-the presentation timestamp in input
-
-@item N
-the count of the input frame, starting from 0.
-
-@item NB_CONSUMED_SAMPLES
-the number of consumed samples, not including the current frame (only
-audio)
-
-@item NB_SAMPLES
-the number of samples in the current frame (only audio)
-
-@item SAMPLE_RATE
-audio sample rate
-
-@item STARTPTS
-the PTS of the first video frame
-
-@item INTERLACED
-tell if the current frame is interlaced
-
-@item TB
-the time base
-
-@item POS
-original position in the file of the frame, or undefined if undefined
-for the current frame
-
-@item PREV_INPTS
-previous input PTS
-
-@item PREV_OUTPTS
-previous output PTS
-
-@end table
-
-Some examples follow:
-
-@example
-# start counting PTS from zero
-setpts=PTS-STARTPTS
-
-# fast motion
-setpts=0.5*PTS
-
-# slow motion
-setpts=2.0*PTS
-
-# fixed rate 25 fps
-setpts=N/(25*TB)
-
-# fixed rate 25 fps with some jitter
-setpts='1/(25*TB) * (N + 0.05 * sin(N*2*PI/25))'
-
-# apply an offset of 10 seconds to the input PTS
-setpts=PTS+10/TB
-@end example
-
-@section settb, asettb
-
-Set the timebase to use for the output frames timestamps.
-It is mainly useful for testing timebase configuration.
-
-It accepts in input an arithmetic expression representing a rational.
-The expression can contain the constants "AVTB" (the
-default timebase), "intb" (the input timebase) and "sr" (the sample rate,
-audio only).
-
-The default value for the input is "intb".
-
-Follow some examples.
-
-@example
-# set the timebase to 1/25
-settb=1/25
-
-# set the timebase to 1/10
-settb=0.1
-
-#set the timebase to 1001/1000
-settb=1+0.001
-
-#set the timebase to 2*intb
-settb=2*intb
-
-#set the default timebase value
-settb=AVTB
-@end example
 
 @section showinfo
 
@@ -3329,6 +3393,35 @@ not specified it will use the default value of 16.
 
 Adding this in the beginning of filter chains should make filtering
 faster due to better use of the memory cache.
+
+@section smartblur
+
+Blur the input video without impacting the outlines.
+
+The filter accepts the following parameters:
+@var{luma_radius}:@var{luma_strength}:@var{luma_threshold}[:@var{chroma_radius}:@var{chroma_strength}:@var{chroma_threshold}]
+
+Parameters prefixed by @var{luma} indicate that they work on the
+luminance of the pixels whereas parameters prefixed by @var{chroma}
+refer to the chrominance of the pixels.
+
+If the chroma parameters are not set, the luma parameters are used for
+either the luminance and the chrominance of the pixels.
+
+@var{luma_radius} or @var{chroma_radius} must be a float number in the
+range [0.1,5.0] that specifies the variance of the gaussian filter
+used to blur the image (slower if larger).
+
+@var{luma_strength} or @var{chroma_strength} must be a float number in
+the range [-1.0,1.0] that configures the blurring. A value included in
+[0.0,1.0] will blur the image whereas a value included in [-1.0,0.0]
+will sharpen the image.
+
+@var{luma_threshold} or @var{chroma_threshold} must be an integer in
+the range [-30,30] that is used as a coefficient to determine whether
+a pixel should be blurred or not. A value of 0 will filter all the
+image, a value included in [0,30] will filter flat areas and a value
+included in [-30,0] will filter edges.
 
 @section split
 
@@ -3451,11 +3544,14 @@ Default mode is @code{merge}.
 
 Transpose rows with columns in the input video and optionally flip it.
 
-It accepts a parameter representing an integer, which can assume the
-values:
+This filter accepts the following named parameters:
+
+@table @option
+@item dir
+Specify the transposition direction. Can assume the following values:
 
 @table @samp
-@item 0
+@item 0, 4
 Rotate by 90 degrees counterclockwise and vertically flip (default), that is:
 @example
 L.R     L.l
@@ -3463,7 +3559,7 @@ L.R     L.l
 l.r     R.r
 @end example
 
-@item 1
+@item 1, 5
 Rotate by 90 degrees clockwise, that is:
 @example
 L.R     l.L
@@ -3471,7 +3567,7 @@ L.R     l.L
 l.r     r.R
 @end example
 
-@item 2
+@item 2, 6
 Rotate by 90 degrees counterclockwise, that is:
 @example
 L.R     R.r
@@ -3479,13 +3575,32 @@ L.R     R.r
 l.r     L.l
 @end example
 
-@item 3
+@item 3, 7
 Rotate by 90 degrees clockwise and vertically flip, that is:
 @example
 L.R     r.R
 . . ->  . .
 l.r     l.L
 @end example
+@end table
+
+For values between 4-7, the transposition is only done if the input
+video geometry is portrait and not landscape. These values are
+deprecated, the @code{passthrough} option should be used instead.
+
+@item passthrough
+Do not apply the transposition if the input geometry matches the one
+specified by the specified value. It accepts the following values:
+@table @samp
+@item none
+Always apply transposition.
+@item portrait
+Preserve portrait geometry (when @var{height} >= @var{width}).
+@item landscape
+Preserve landscape geometry (when @var{width} >= @var{height}).
+@end table
+
+Default value is @code{none}.
 @end table
 
 @section unsharp
@@ -3612,7 +3727,7 @@ This source is mainly intended for a programmatic use, in particular
 through the interface defined in @file{libavfilter/vsrc_buffer.h}.
 
 It accepts a list of options in the form of @var{key}=@var{value} pairs
-separated by ":". A descroption of the accepted options follows.
+separated by ":". A description of the accepted options follows.
 
 @table @option
 
@@ -3648,7 +3763,7 @@ will instruct the source to accept video frames with size 320x240 and
 with format "yuv410p", assuming 1/24 as the timestamps timebase and
 square pixels (1:1 sample aspect ratio).
 Since the pixel format with name "yuv410p" corresponds to the number 6
-(check the enum PixelFormat definition in @file{libavutil/pixfmt.h}),
+(check the enum AVPixelFormat definition in @file{libavutil/pixfmt.h}),
 this example corresponds to:
 @example
 buffer=size=320x240:pixfmt=6:time_base=1/24:pixel_aspect=1/1
@@ -4177,6 +4292,331 @@ tools.
 
 Below is a description of the currently available multimedia filters.
 
+@section asendcmd, sendcmd
+
+Send commands to filters in the filtergraph.
+
+These filters read commands to be sent to other filters in the
+filtergraph.
+
+@code{asendcmd} must be inserted between two audio filters,
+@code{sendcmd} must be inserted between two video filters, but apart
+from that they act the same way.
+
+The specification of commands can be provided in the filter arguments
+with the @var{commands} option, or in a file specified by the
+@var{filename} option.
+
+These filters accept the following options:
+@table @option
+@item commands, c
+Set the commands to be read and sent to the other filters.
+@item filename, f
+Set the filename of the commands to be read and sent to the other
+filters.
+@end table
+
+@subsection Commands syntax
+
+A commands description consists of a sequence of interval
+specifications, comprising a list of commands to be executed when a
+particular event related to that interval occurs. The occurring event
+is typically the current frame time entering or leaving a given time
+interval.
+
+An interval is specified by the following syntax:
+@example
+@var{START}[-@var{END}] @var{COMMANDS};
+@end example
+
+The time interval is specified by the @var{START} and @var{END} times.
+@var{END} is optional and defaults to the maximum time.
+
+The current frame time is considered within the specified interval if
+it is included in the interval [@var{START}, @var{END}), that is when
+the time is greater or equal to @var{START} and is lesser than
+@var{END}.
+
+@var{COMMANDS} consists of a sequence of one or more command
+specifications, separated by ",", relating to that interval.  The
+syntax of a command specification is given by:
+@example
+[@var{FLAGS}] @var{TARGET} @var{COMMAND} @var{ARG}
+@end example
+
+@var{FLAGS} is optional and specifies the type of events relating to
+the time interval which enable sending the specified command, and must
+be a non-null sequence of identifier flags separated by "+" or "|" and
+enclosed between "[" and "]".
+
+The following flags are recognized:
+@table @option
+@item enter
+The command is sent when the current frame timestamp enters the
+specified interval. In other words, the command is sent when the
+previous frame timestamp was not in the given interval, and the
+current is.
+
+@item leave
+The command is sent when the current frame timestamp leaves the
+specified interval. In other words, the command is sent when the
+previous frame timestamp was in the given interval, and the
+current is not.
+@end table
+
+If @var{FLAGS} is not specified, a default value of @code{[enter]} is
+assumed.
+
+@var{TARGET} specifies the target of the command, usually the name of
+the filter class or a specific filter instance name.
+
+@var{COMMAND} specifies the name of the command for the target filter.
+
+@var{ARG} is optional and specifies the optional list of argument for
+the given @var{COMMAND}.
+
+Between one interval specification and another, whitespaces, or
+sequences of characters starting with @code{#} until the end of line,
+are ignored and can be used to annotate comments.
+
+A simplified BNF description of the commands specification syntax
+follows:
+@example
+@var{COMMAND_FLAG}  ::= "enter" | "leave"
+@var{COMMAND_FLAGS} ::= @var{COMMAND_FLAG} [(+|"|")@var{COMMAND_FLAG}]
+@var{COMMAND}       ::= ["[" @var{COMMAND_FLAGS} "]"] @var{TARGET} @var{COMMAND} [@var{ARG}]
+@var{COMMANDS}      ::= @var{COMMAND} [,@var{COMMANDS}]
+@var{INTERVAL}      ::= @var{START}[-@var{END}] @var{COMMANDS}
+@var{INTERVALS}     ::= @var{INTERVAL}[;@var{INTERVALS}]
+@end example
+
+@subsection Examples
+
+@itemize
+@item
+Specify audio tempo change at second 4:
+@example
+asendcmd=c='4.0 atempo tempo 1.5',atempo
+@end example
+
+@item
+Specify a list of drawtext and hue commands in a file.
+@example
+# show text in the interval 5-10
+5.0-10.0 [enter] drawtext reinit 'fontfile=FreeSerif.ttf:text=hello world',
+         [leave] drawtext reinit 'fontfile=FreeSerif.ttf:text=';
+
+# desaturate the image in the interval 15-20
+15.0-20.0 [enter] hue reinit s=0,
+          [enter] drawtext reinit 'fontfile=FreeSerif.ttf:text=nocolor',
+          [leave] hue reinit s=1,
+          [leave] drawtext reinit 'fontfile=FreeSerif.ttf:text=color';
+
+# apply an exponential saturation fade-out effect, starting from time 25
+25 [enter] hue s=exp(t-25)
+@end example
+
+A filtergraph allowing to read and process the above command list
+stored in a file @file{test.cmd}, can be specified with:
+@example
+sendcmd=f=test.cmd,drawtext=fontfile=FreeSerif.ttf:text='',hue
+@end example
+@end itemize
+
+@section asetpts, setpts
+
+Change the PTS (presentation timestamp) of the input frames.
+
+@code{asetpts} works on audio frames, @code{setpts} on video frames.
+
+Accept in input an expression evaluated through the eval API, which
+can contain the following constants:
+
+@table @option
+@item FRAME_RATE
+frame rate, only defined for constant frame-rate video
+
+@item PTS
+the presentation timestamp in input
+
+@item N
+the count of the input frame, starting from 0.
+
+@item NB_CONSUMED_SAMPLES
+the number of consumed samples, not including the current frame (only
+audio)
+
+@item NB_SAMPLES
+the number of samples in the current frame (only audio)
+
+@item SAMPLE_RATE
+audio sample rate
+
+@item STARTPTS
+the PTS of the first frame
+
+@item STARTT
+the time in seconds of the first frame
+
+@item INTERLACED
+tell if the current frame is interlaced
+
+@item T
+the time in seconds of the current frame
+
+@item TB
+the time base
+
+@item POS
+original position in the file of the frame, or undefined if undefined
+for the current frame
+
+@item PREV_INPTS
+previous input PTS
+
+@item PREV_INT
+previous input time in seconds
+
+@item PREV_OUTPTS
+previous output PTS
+
+@item PREV_OUTT
+previous output time in seconds
+@end table
+
+@subsection Examples
+
+@itemize
+@item
+Start counting PTS from zero
+@example
+setpts=PTS-STARTPTS
+@end example
+
+@item
+Apply fast motion effect:
+@example
+setpts=0.5*PTS
+@end example
+
+@item
+Apply slow motion effect:
+@example
+setpts=2.0*PTS
+@end example
+
+@item
+Set fixed rate of 25 frames per second:
+@example
+setpts=N/(25*TB)
+@end example
+
+@item
+Set fixed rate 25 fps with some jitter:
+@example
+setpts='1/(25*TB) * (N + 0.05 * sin(N*2*PI/25))'
+@end example
+
+@item
+Apply an offset of 10 seconds to the input PTS:
+@example
+setpts=PTS+10/TB
+@end example
+@end itemize
+
+@section ebur128
+
+EBU R128 scanner filter. This filter takes an audio stream as input and outputs
+it unchanged. By default, it logs a message at a frequency of 10Hz with the
+Momentary loudness (identified by @code{M}), Short-term loudness (@code{S}),
+Integrated loudness (@code{I}) and Loudness Range (@code{LRA}).
+
+The filter also has a video output (see the @var{video} option) with a real
+time graph to observe the loudness evolution. The graphic contains the logged
+message mentioned above, so it is not printed anymore when this option is set,
+unless the verbose logging is set. The main graphing area contains the
+short-term loudness (3 seconds of analysis), and the gauge on the right is for
+the momentary loudness (400 milliseconds).
+
+More information about the Loudness Recommendation EBU R128 on
+@url{http://tech.ebu.ch/loudness}.
+
+The filter accepts the following named parameters:
+
+@table @option
+
+@item video
+Activate the video output. The audio stream is passed unchanged whether this
+option is set or no. The video stream will be the first output stream if
+activated. Default is @code{0}.
+
+@item size
+Set the video size. This option is for video only. Default and minimum
+resolution is @code{640x480}.
+
+@item meter
+Set the EBU scale meter. Default is @code{9}. Common values are @code{9} and
+@code{18}, respectively for EBU scale meter +9 and EBU scale meter +18. Any
+other integer value between this range is allowed.
+
+@end table
+
+Example of real-time graph using @command{ffplay}, with a EBU scale meter +18:
+@example
+ffplay -f lavfi -i "amovie=input.mp3,ebur128=video=1:meter=18 [out0][out1]"
+@end example
+
+Run an analysis with @command{ffmpeg}:
+@example
+ffmpeg -nostats -i input.mp3 -filter_complex ebur128 -f null -
+@end example
+
+@section settb, asettb
+
+Set the timebase to use for the output frames timestamps.
+It is mainly useful for testing timebase configuration.
+
+It accepts in input an arithmetic expression representing a rational.
+The expression can contain the constants "AVTB" (the
+default timebase), "intb" (the input timebase) and "sr" (the sample rate,
+audio only).
+
+The default value for the input is "intb".
+
+@subsection Examples
+
+@itemize
+@item
+Set the timebase to 1/25:
+@example
+settb=1/25
+@end example
+
+@item
+Set the timebase to 1/10:
+@example
+settb=0.1
+@end example
+
+@item
+Set the timebase to 1001/1000:
+@example
+settb=1+0.001
+@end example
+
+@item
+Set the timebase to 2*intb:
+@example
+settb=2*intb
+@end example
+
+@item
+Set the default timebase value:
+@example
+settb=AVTB
+@end example
+@end itemize
+
 @section concat
 
 Concatenate audio and video streams, joining them together one after the
@@ -4251,6 +4691,20 @@ Note that a desync will happen at the stitch if the audio and video streams
 do not have exactly the same duration in the first file.
 
 @end itemize
+
+@section showspectrum
+
+Convert input audio to a video output, representing the audio frequency
+spectrum.
+
+The filter accepts the following named parameters:
+@table @option
+@item size, s
+Specify the video size for the output. Default value is @code{640x480}.
+@end table
+
+The usage is very similar to the showwaves filter; see the examples in that
+section.
 
 @section showwaves
 

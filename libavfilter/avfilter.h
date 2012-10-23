@@ -131,6 +131,9 @@ typedef struct AVFilterBufferRefVideoProps {
     int top_field_first;        ///< field order
     enum AVPictureType pict_type; ///< picture type of the frame
     int key_frame;              ///< 1 -> keyframe, 0-> not
+    int qp_table_linesize;                ///< qp_table stride
+    int qp_table_size;            ///< qp_table size
+    int8_t *qp_table;             ///< array of Quantization Parameters
 } AVFilterBufferRefVideoProps;
 
 /**
@@ -177,6 +180,8 @@ typedef struct AVFilterBufferRef {
     int perms;                  ///< permissions, see the AV_PERM_* flags
 
     enum AVMediaType type;      ///< media type of buffer data
+
+    AVDictionary *metadata;     ///< dictionary containing metadata key=value tags
 } AVFilterBufferRef;
 
 /**
@@ -406,10 +411,6 @@ const char *avfilter_pad_get_name(AVFilterPad *pads, int pad_idx);
  * @return type of the pad_idx'th pad in pads
  */
 enum AVMediaType avfilter_pad_get_type(AVFilterPad *pads, int pad_idx);
-
-/** default handler for end_frame() for video inputs */
-attribute_deprecated
-int  avfilter_default_end_frame(AVFilterLink *link);
 
 /**
  * Filter definition. This defines the pads a filter contains, and all the
@@ -697,6 +698,18 @@ struct AVFilterLink {
      * by the filters.
      */
     AVFilterBufferRef *cur_buf_copy;
+
+    /**
+     * True if the link is closed.
+     * If set, all attemps of start_frame, filter_samples or request_frame
+     * will fail with AVERROR_EOF, and if necessary the reference will be
+     * destroyed.
+     * If request_frame returns AVERROR_EOF, this flag is set on the
+     * corresponding link.
+     * It can be set also be set by either the source or the destination
+     * filter.
+     */
+    int closed;
 };
 
 /**
@@ -715,6 +728,11 @@ int avfilter_link(AVFilterContext *src, unsigned srcpad,
  * Free the link in *link, and set its pointer to NULL.
  */
 void avfilter_link_free(AVFilterLink **link);
+
+/**
+ * Set the closed field of a link.
+ */
+void avfilter_link_set_closed(AVFilterLink *link, int closed);
 
 /**
  * Negotiate the media format, dimensions, etc of all inputs to a filter.
@@ -737,7 +755,7 @@ int avfilter_config_links(AVFilterContext *filter);
  */
 AVFilterBufferRef *
 avfilter_get_video_buffer_ref_from_arrays(uint8_t * const data[4], const int linesize[4], int perms,
-                                          int w, int h, enum PixelFormat format);
+                                          int w, int h, enum AVPixelFormat format);
 
 /**
  * Create an audio buffer reference wrapped around an already

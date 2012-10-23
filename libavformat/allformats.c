@@ -88,11 +88,13 @@ void av_register_all(void)
     REGISTER_MUXDEMUX (DNXHD, dnxhd);
     REGISTER_DEMUXER  (DSICIN, dsicin);
     REGISTER_MUXDEMUX (DTS, dts);
+    REGISTER_DEMUXER  (DTSHD, dtshd);
     REGISTER_MUXDEMUX (DV, dv);
     REGISTER_DEMUXER  (DXA, dxa);
     REGISTER_DEMUXER  (EA, ea);
     REGISTER_DEMUXER  (EA_CDATA, ea_cdata);
     REGISTER_MUXDEMUX (EAC3, eac3);
+    REGISTER_MUXER    (F4V, f4v);
     REGISTER_MUXDEMUX (FFM, ffm);
     REGISTER_MUXDEMUX (FFMETADATA, ffmetadata);
     REGISTER_MUXDEMUX (FILMSTRIP, filmstrip);
@@ -131,6 +133,7 @@ void av_register_all(void)
     REGISTER_MUXDEMUX (LATM, latm);
     REGISTER_DEMUXER  (LMLM4, lmlm4);
     REGISTER_DEMUXER  (LOAS, loas);
+    REGISTER_DEMUXER  (LVF, lvf);
     REGISTER_DEMUXER  (LXF, lxf);
     REGISTER_MUXDEMUX (M4V, m4v);
     REGISTER_MUXER    (MD5, md5);
@@ -223,6 +226,7 @@ void av_register_all(void)
     REGISTER_DEMUXER  (SIFF, siff);
     REGISTER_DEMUXER  (SMACKER, smacker);
     REGISTER_MUXDEMUX (SMJPEG, smjpeg);
+    REGISTER_MUXER    (SMOOTHSTREAMING, smoothstreaming);
     REGISTER_DEMUXER  (SMUSH, smush);
     REGISTER_DEMUXER  (SOL, sol);
     REGISTER_MUXDEMUX (SOX, sox);
@@ -231,6 +235,7 @@ void av_register_all(void)
     REGISTER_DEMUXER  (STR, str);
     REGISTER_DEMUXER  (SUBVIEWER, subviewer);
     REGISTER_MUXDEMUX (SWF, swf);
+    REGISTER_DEMUXER  (TAK, tak);
     REGISTER_MUXER    (TG2, tg2);
     REGISTER_MUXER    (TGP, tgp);
     REGISTER_DEMUXER  (THP, thp);
@@ -250,6 +255,7 @@ void av_register_all(void)
     REGISTER_MUXDEMUX (WAV, wav);
     REGISTER_DEMUXER  (WC3, wc3);
     REGISTER_MUXER    (WEBM, webm);
+    REGISTER_DEMUXER  (WEBVTT, webvtt);
     REGISTER_DEMUXER  (WSAUD, wsaud);
     REGISTER_DEMUXER  (WSVQA, wsvqa);
     REGISTER_MUXDEMUX (WTV, wtv);

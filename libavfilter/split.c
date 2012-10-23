@@ -71,10 +71,14 @@ static void split_uninit(AVFilterContext *ctx)
 static int start_frame(AVFilterLink *inlink, AVFilterBufferRef *picref)
 {
     AVFilterContext *ctx = inlink->dst;
-    int i, ret = 0;
+    int i, ret = AVERROR_EOF;
 
     for (i = 0; i < ctx->nb_outputs; i++) {
-        AVFilterBufferRef *buf_out = avfilter_ref_buffer(picref, ~AV_PERM_WRITE);
+        AVFilterBufferRef *buf_out;
+
+        if (ctx->outputs[i]->closed)
+            continue;
+        buf_out = avfilter_ref_buffer(picref, ~AV_PERM_WRITE);
         if (!buf_out)
             return AVERROR(ENOMEM);
 
@@ -88,9 +92,11 @@ static int start_frame(AVFilterLink *inlink, AVFilterBufferRef *picref)
 static int draw_slice(AVFilterLink *inlink, int y, int h, int slice_dir)
 {
     AVFilterContext *ctx = inlink->dst;
-    int i, ret = 0;
+    int i, ret = AVERROR_EOF;
 
     for (i = 0; i < ctx->nb_outputs; i++) {
+        if (ctx->outputs[i]->closed)
+            continue;
         ret = ff_draw_slice(ctx->outputs[i], y, h, slice_dir);
         if (ret < 0)
             break;
@@ -101,15 +107,29 @@ static int draw_slice(AVFilterLink *inlink, int y, int h, int slice_dir)
 static int end_frame(AVFilterLink *inlink)
 {
     AVFilterContext *ctx = inlink->dst;
-    int i, ret = 0;
+    int i, ret = AVERROR_EOF;
 
     for (i = 0; i < ctx->nb_outputs; i++) {
+        if (ctx->outputs[i]->closed)
+            continue;
         ret = ff_end_frame(ctx->outputs[i]);
         if (ret < 0)
             break;
     }
     return ret;
 }
+
+static const AVFilterPad avfilter_vf_split_inputs[] = {
+    {
+        .name             = "default",
+        .type             = AVMEDIA_TYPE_VIDEO,
+        .get_video_buffer = ff_null_get_video_buffer,
+        .start_frame      = start_frame,
+        .draw_slice       = draw_slice,
+        .end_frame        = end_frame,
+    },
+    { NULL }
+};
 
 AVFilter avfilter_vf_split = {
     .name      = "split",
@@ -118,14 +138,8 @@ AVFilter avfilter_vf_split = {
     .init   = split_init,
     .uninit = split_uninit,
 
-    .inputs    = (const AVFilterPad[]) {{ .name            = "default",
-                                          .type            = AVMEDIA_TYPE_VIDEO,
-                                          .get_video_buffer= ff_null_get_video_buffer,
-                                          .start_frame     = start_frame,
-                                          .draw_slice      = draw_slice,
-                                          .end_frame       = end_frame, },
-                                        { .name = NULL}},
-    .outputs   = (const AVFilterPad[]) {{ .name = NULL}},
+    .inputs    = avfilter_vf_split_inputs,
+    .outputs   = NULL,
 };
 
 static int filter_samples(AVFilterLink *inlink, AVFilterBufferRef *samplesref)
@@ -149,6 +163,16 @@ static int filter_samples(AVFilterLink *inlink, AVFilterBufferRef *samplesref)
     return ret;
 }
 
+static const AVFilterPad avfilter_af_asplit_inputs[] = {
+    {
+        .name             = "default",
+        .type             = AVMEDIA_TYPE_AUDIO,
+        .get_audio_buffer = ff_null_get_audio_buffer,
+        .filter_samples   = filter_samples
+    },
+    { NULL }
+};
+
 AVFilter avfilter_af_asplit = {
     .name        = "asplit",
     .description = NULL_IF_CONFIG_SMALL("Pass on the audio input to N audio outputs."),
@@ -156,10 +180,6 @@ AVFilter avfilter_af_asplit = {
     .init   = split_init,
     .uninit = split_uninit,
 
-    .inputs  = (const AVFilterPad[]) {{ .name             = "default",
-                                        .type             = AVMEDIA_TYPE_AUDIO,
-                                        .get_audio_buffer = ff_null_get_audio_buffer,
-                                        .filter_samples   = filter_samples },
-                                      { .name = NULL }},
-    .outputs = (const AVFilterPad[]) {{ .name = NULL }},
+    .inputs  = avfilter_af_asplit_inputs,
+    .outputs = NULL,
 };

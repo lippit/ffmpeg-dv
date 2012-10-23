@@ -100,8 +100,8 @@ struct NSVs_header {
     uint32_t chunk_tag; /* 'NSVs' */
     uint32_t v4cc;      /* or 'NONE' */
     uint32_t a4cc;      /* or 'NONE' */
-    uint16_t vwidth;    /* assert(vwidth%16==0) */
-    uint16_t vheight;   /* assert(vheight%16==0) */
+    uint16_t vwidth;    /* av_assert(vwidth%16==0) */
+    uint16_t vheight;   /* av_assert(vheight%16==0) */
     uint8_t framerate;  /* value = (framerate&0x80)?frtable[frameratex0x7f]:framerate */
     uint16_t unknown;
 };
@@ -653,7 +653,10 @@ null_chunk_retry:
                 if (bps != 16) {
                     av_dlog(s, "NSV AUDIO bit/sample != 16 (%d)!!!\n", bps);
                 }
-                bps /= channels; // ???
+                if(channels)
+                    bps /= channels; // ???
+                else
+                    av_log(s, AV_LOG_WARNING, "Channels is 0\n");
                 if (bps == 8)
                     st[NSV_ST_AUDIO]->codec->codec_id = AV_CODEC_ID_PCM_U8;
                 samplerate /= 4;/* UGH ??? XXX */

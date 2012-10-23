@@ -25,6 +25,7 @@
 #include "avformat.h"
 #include "internal.h"
 #include "riff.h"
+#include "rmsipr.h"
 #include "rm.h"
 
 #define DEINT_ID_GENR MKTAG('g', 'e', 'n', 'r') ///< interleaving for Cooker/Atrac
@@ -58,21 +59,6 @@ typedef struct {
     int audio_stream_num; ///< Stream number for audio packets
     int audio_pkt_cnt; ///< Output packet counter
 } RMDemuxContext;
-
-static const unsigned char sipr_swaps[38][2] = {
-    {  0, 63 }, {  1, 22 }, {  2, 44 }, {  3, 90 },
-    {  5, 81 }, {  7, 31 }, {  8, 86 }, {  9, 58 },
-    { 10, 36 }, { 12, 68 }, { 13, 39 }, { 14, 73 },
-    { 15, 53 }, { 16, 69 }, { 17, 57 }, { 19, 88 },
-    { 20, 34 }, { 21, 71 }, { 24, 46 }, { 25, 94 },
-    { 26, 54 }, { 28, 75 }, { 29, 50 }, { 32, 70 },
-    { 33, 92 }, { 35, 74 }, { 38, 85 }, { 40, 56 },
-    { 42, 87 }, { 43, 65 }, { 45, 59 }, { 48, 79 },
-    { 49, 93 }, { 51, 89 }, { 55, 95 }, { 61, 76 },
-    { 67, 83 }, { 77, 80 }
-};
-
-const unsigned char ff_sipr_subpk_size[4] = { 29, 19, 37, 20 };
 
 static inline void get_strl(AVIOContext *pb, char *buf, int buf_size, int len)
 {
@@ -298,7 +284,7 @@ static int rm_read_audio_stream_info(AVFormatContext *s, AVIOContext *pb,
 
 int
 ff_rm_read_mdpr_codecdata (AVFormatContext *s, AVIOContext *pb,
-                           AVStream *st, RMStream *rst, int codec_data_size)
+                           AVStream *st, RMStream *rst, int codec_data_size, const uint8_t *mime)
 {
     unsigned int v;
     int size;
@@ -321,6 +307,33 @@ ff_rm_read_mdpr_codecdata (AVFormatContext *s, AVIOContext *pb,
         st->codec->codec_tag  = AV_RL32(st->codec->extradata);
         st->codec->codec_id   = ff_codec_get_id(ff_rm_codec_tags,
                                                 st->codec->codec_tag);
+    } else if(mime && !strcmp(mime, "logical-fileinfo")){
+        int stream_count, rule_count, property_count, i;
+        ff_free_stream(s, st);
+        if (avio_rb16(pb) != 0) {
+            av_log(s, AV_LOG_WARNING, "Unsupported version\n");
+            goto skip;
+        }
+        stream_count = avio_rb16(pb);
+        avio_skip(pb, 6*stream_count);
+        rule_count = avio_rb16(pb);
+        avio_skip(pb, 2*rule_count);
+        property_count = avio_rb16(pb);
+        for(i=0; i<property_count; i++){
+            uint8_t name[128], val[128];
+            avio_rb32(pb);
+            if (avio_rb16(pb) != 0) {
+                av_log(s, AV_LOG_WARNING, "Unsupported Name value property version\n");
+                goto skip; //FIXME skip just this one
+            }
+            get_str8(pb, name, sizeof(name));
+            switch(avio_rb32(pb)) {
+            case 2: get_strl(pb, val, sizeof(val), avio_rb16(pb));
+                av_dict_set(&s->metadata, name, val, 0);
+                break;
+            default: avio_skip(pb, avio_rb16(pb));
+            }
+        }
     } else {
         int fps;
         if (avio_rl32(pb) != MKTAG('V', 'I', 'D', 'O')) {
@@ -331,7 +344,7 @@ ff_rm_read_mdpr_codecdata (AVFormatContext *s, AVIOContext *pb,
         st->codec->codec_tag = avio_rl32(pb);
         st->codec->codec_id  = ff_codec_get_id(ff_rm_codec_tags,
                                                st->codec->codec_tag);
-//        av_log(s, AV_LOG_DEBUG, "%X %X\n", st->codec->codec_tag, MKTAG('R', 'V', '2', '0'));
+        av_dlog(s, "%X %X\n", st->codec->codec_tag, MKTAG('R', 'V', '2', '0'));
         if (st->codec->codec_id == AV_CODEC_ID_NONE)
             goto fail1;
         st->codec->width  = avio_rb16(pb);
@@ -440,7 +453,7 @@ static int rm_read_header(AVFormatContext *s)
     int tag_size;
     unsigned int start_time, duration;
     unsigned int data_off = 0, indx_off = 0;
-    char buf[128];
+    char buf[128], mime[128];
     int flags = 0;
 
     tag = avio_rl32(pb);
@@ -505,11 +518,11 @@ static int rm_read_header(AVFormatContext *s)
             if(duration>0)
                 s->duration = AV_NOPTS_VALUE;
             get_str8(pb, buf, sizeof(buf)); /* desc */
-            get_str8(pb, buf, sizeof(buf)); /* mimetype */
+            get_str8(pb, mime, sizeof(mime)); /* mimetype */
             st->codec->codec_type = AVMEDIA_TYPE_DATA;
             st->priv_data = ff_rm_alloc_rmstream();
             if (ff_rm_read_mdpr_codecdata(s, s->pb, st, st->priv_data,
-                                          avio_rb32(pb)) < 0)
+                                          avio_rb32(pb), mime) < 0)
                 return -1;
             break;
         case MKTAG('D', 'A', 'T', 'A'):
@@ -719,32 +732,6 @@ rm_ac3_swap_bytes (AVStream *st, AVPacket *pkt)
         for (j=0;j<pkt->size;j+=2) {
             FFSWAP(int, ptr[0], ptr[1]);
             ptr += 2;
-        }
-    }
-}
-
-/**
- * Perform 4-bit block reordering for SIPR data.
- * @todo This can be optimized, e.g. use memcpy() if data blocks are aligned
- */
-void ff_rm_reorder_sipr_data(uint8_t *buf, int sub_packet_h, int framesize)
-{
-    int n, bs = sub_packet_h * framesize * 2 / 96; // nibbles per subpacket
-
-    for (n = 0; n < 38; n++) {
-        int j;
-        int i = bs * sipr_swaps[n][0];
-        int o = bs * sipr_swaps[n][1];
-
-        /* swap 4bit-nibbles of block 'i' with 'o' */
-        for (j = 0; j < bs; j++, i++, o++) {
-            int x = (buf[i >> 1] >> (4 * (i & 1))) & 0xF,
-                y = (buf[o >> 1] >> (4 * (o & 1))) & 0xF;
-
-            buf[o >> 1] = (x << (4 * (o & 1))) |
-                (buf[o >> 1] & (0xF << (4 * !(o & 1))));
-            buf[i >> 1] = (y << (4 * (i & 1))) |
-                (buf[i >> 1] & (0xF << (4 * !(i & 1))));
         }
     }
 }
@@ -975,7 +962,8 @@ static int64_t rm_read_dts(AVFormatContext *s, int stream_index,
         }
 
         if((flags&2) && (seq&0x7F) == 1){
-//            av_log(s, AV_LOG_DEBUG, "%d %d-%d %"PRId64" %d\n", flags, stream_index2, stream_index, dts, seq);
+            av_dlog(s, "%d %d-%d %"PRId64" %d\n",
+                    flags, stream_index2, stream_index, dts, seq);
             av_add_index_entry(st, pos, dts, 0, 0, AVINDEX_KEYFRAME);
             if(stream_index2 == stream_index)
                 break;

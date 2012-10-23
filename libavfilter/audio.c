@@ -59,6 +59,8 @@ AVFilterBufferRef *ff_default_get_audio_buffer(AVFilterLink *link, int perms,
     if (!samplesref)
         goto fail;
 
+    samplesref->audio->sample_rate = link->sample_rate;
+
     av_freep(&data);
 
 fail:
@@ -172,6 +174,11 @@ int ff_filter_samples_framed(AVFilterLink *link, AVFilterBufferRef *samplesref)
 
     FF_TPRINTF_START(NULL, filter_samples); ff_tlog_link(NULL, link, 1);
 
+    if (link->closed) {
+        avfilter_unref_buffer(samplesref);
+        return AVERROR_EOF;
+    }
+
     if (!(filter_samples = dst->filter_samples))
         filter_samples = default_filter_samples;
 
@@ -217,6 +224,10 @@ int ff_filter_samples(AVFilterLink *link, AVFilterBufferRef *samplesref)
     AVFilterBufferRef *pbuf = link->partial_buf;
     int nb_channels = av_get_channel_layout_nb_channels(link->channel_layout);
     int ret = 0;
+
+    av_assert1(samplesref->format                == link->format);
+    av_assert1(samplesref->audio->channel_layout == link->channel_layout);
+    av_assert1(samplesref->audio->sample_rate    == link->sample_rate);
 
     if (!link->min_samples ||
         (!pbuf &&

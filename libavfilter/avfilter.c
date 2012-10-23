@@ -142,7 +142,7 @@ int avfilter_link(AVFilterContext *src, unsigned srcpad,
     link->srcpad  = &src->output_pads[srcpad];
     link->dstpad  = &dst->input_pads[dstpad];
     link->type    = src->output_pads[srcpad].type;
-    av_assert0(PIX_FMT_NONE == -1 && AV_SAMPLE_FMT_NONE == -1);
+    av_assert0(AV_PIX_FMT_NONE == -1 && AV_SAMPLE_FMT_NONE == -1);
     link->format  = -1;
 
     return 0;
@@ -156,7 +156,14 @@ void avfilter_link_free(AVFilterLink **link)
     if ((*link)->pool)
         ff_free_pool((*link)->pool);
 
+    avfilter_unref_bufferp(&(*link)->partial_buf);
+
     av_freep(link);
+}
+
+void avfilter_link_set_closed(AVFilterLink *link, int closed)
+{
+    link->closed = closed;
 }
 
 int avfilter_insert_filter(AVFilterLink *link, AVFilterContext *filt,
@@ -270,6 +277,8 @@ int avfilter_config_links(AVFilterContext *filter)
                         link->sample_rate = inlink->sample_rate;
                     if (!link->time_base.num && !link->time_base.den)
                         link->time_base = inlink->time_base;
+                    if (!link->channel_layout)
+                        link->channel_layout = inlink->channel_layout;
                 } else if (!link->sample_rate) {
                     av_log(link->src, AV_LOG_ERROR,
                            "Audio source filters must set their output link's "
@@ -302,7 +311,7 @@ void ff_tlog_link(void *ctx, AVFilterLink *link, int end)
         ff_tlog(ctx,
                 "link[%p s:%dx%d fmt:%s %s->%s]%s",
                 link, link->w, link->h,
-                av_pix_fmt_descriptors[link->format].name,
+                av_get_pix_fmt_name(link->format),
                 link->src ? link->src->filter->name : "",
                 link->dst ? link->dst->filter->name : "",
                 end ? "\n" : "");
@@ -325,6 +334,8 @@ int ff_request_frame(AVFilterLink *link)
     int ret = -1;
     FF_TPRINTF_START(NULL, request_frame); ff_tlog_link(NULL, link, 1);
 
+    if (link->closed)
+        return AVERROR_EOF;
     if (link->srcpad->request_frame)
         ret = link->srcpad->request_frame(link);
     else if (link->src->inputs[0])
@@ -335,6 +346,8 @@ int ff_request_frame(AVFilterLink *link)
         ff_filter_samples_framed(link, pbuf);
         return 0;
     }
+    if (ret == AVERROR_EOF)
+        link->closed = 1;
     return ret;
 }
 
@@ -422,6 +435,9 @@ void avfilter_uninit(void)
 static int pad_count(const AVFilterPad *pads)
 {
     int count;
+
+    if (!pads)
+        return 0;
 
     for(count = 0; pads->name; count ++) pads ++;
     return count;

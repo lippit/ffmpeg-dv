@@ -55,6 +55,7 @@ AVFilterBufferRef *ff_default_get_video_buffer(AVFilterLink *link, int perms, in
                 AVFilterBuffer *pic = picref->buf;
                 pool->pic[i] = NULL;
                 pool->count--;
+                av_assert0(!picref->video->qp_table);
                 picref->video->w = w;
                 picref->video->h = h;
                 picref->perms = full_perms;
@@ -93,7 +94,7 @@ AVFilterBufferRef *ff_default_get_video_buffer(AVFilterLink *link, int perms, in
 
 AVFilterBufferRef *
 avfilter_get_video_buffer_ref_from_arrays(uint8_t * const data[4], const int linesize[4], int perms,
-                                          int w, int h, enum PixelFormat format)
+                                          int w, int h, enum AVPixelFormat format)
 {
     AVFilterBuffer *pic = av_mallocz(sizeof(AVFilterBuffer));
     AVFilterBufferRef *picref = av_mallocz(sizeof(AVFilterBufferRef));
@@ -248,6 +249,17 @@ int ff_start_frame(AVFilterLink *link, AVFilterBufferRef *picref)
 
     FF_TPRINTF_START(NULL, start_frame); ff_tlog_link(NULL, link, 0); ff_tlog(NULL, " "); ff_tlog_ref(NULL, picref, 1);
 
+    if (strcmp(link->dst->filter->name, "scale")) {
+        av_assert1(picref->format                     == link->format);
+        av_assert1(picref->video->w                   == link->w);
+        av_assert1(picref->video->h                   == link->h);
+    }
+
+    if (link->closed) {
+        avfilter_unref_buffer(picref);
+        return AVERROR_EOF;
+    }
+
     if (!(start_frame = dst->start_frame))
         start_frame = default_start_frame;
 
@@ -274,7 +286,7 @@ int ff_start_frame(AVFilterLink *link, AVFilterBufferRef *picref)
         avfilter_copy_buffer_ref_props(link->cur_buf, link->src_buf);
 
         /* copy palette if required */
-        if (av_pix_fmt_descriptors[link->format].flags & PIX_FMT_PAL)
+        if (av_pix_fmt_desc_get(link->format)->flags & PIX_FMT_PAL)
             memcpy(link->cur_buf->data[1], link->src_buf-> data[1], AVPALETTE_SIZE);
     }
     else
@@ -363,7 +375,8 @@ int ff_draw_slice(AVFilterLink *link, int y, int h, int slice_dir)
 
     /* copy the slice if needed for permission reasons */
     if (link->src_buf) {
-        vsub = av_pix_fmt_descriptors[link->format].log2_chroma_h;
+        const AVPixFmtDescriptor *desc = av_pix_fmt_desc_get(link->format);
+        vsub = desc->log2_chroma_h;
 
         for (i = 0; i < 4; i++) {
             if (link->src_buf->data[i]) {
@@ -400,9 +413,3 @@ int ff_draw_slice(AVFilterLink *link, int y, int h, int slice_dir)
         av_assert1(link->cur_buf_copy->buf->refcount > 0);
     return ret;
 }
-
-int avfilter_default_end_frame(AVFilterLink *inlink)
-{
-    return default_end_frame(inlink);
-}
-

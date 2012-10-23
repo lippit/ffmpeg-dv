@@ -427,8 +427,11 @@ static int decode_cell_data(Cell *cell, uint8_t *block, uint8_t *ref_block,
     blk_row_offset = (row_offset << (2 + v_zoom)) - (cell->width << 2);
     line_offset    = v_zoom ? row_offset : 0;
 
-    for (y = 0; y + v_zoom < cell->height; is_first_row = 0, y += 1 + v_zoom) {
-        for (x = 0; x + h_zoom < cell->width; x += 1 + h_zoom) {
+    if (cell->height & v_zoom || cell->width & h_zoom)
+        return IV3_BAD_DATA;
+
+    for (y = 0; y < cell->height; is_first_row = 0, y += 1 + v_zoom) {
+        for (x = 0; x < cell->width; x += 1 + h_zoom) {
             ref = ref_block;
             dst = block;
 
@@ -1007,14 +1010,17 @@ static int decode_frame_headers(Indeo3DecodeContext *ctx, AVCodecContext *avctx,
  *  @param[in]  buf_sel      indicates which frame buffer the input data stored in
  *  @param[out] dst          pointer to the buffer receiving converted pixels
  *  @param[in]  dst_pitch    pitch for moving to the next y line
+ *  @param[in]  dst_height   output plane height
  */
-static void output_plane(const Plane *plane, int buf_sel, uint8_t *dst, int dst_pitch)
+static void output_plane(const Plane *plane, int buf_sel, uint8_t *dst,
+                         int dst_pitch, int dst_height)
 {
     int             x,y;
     const uint8_t   *src  = plane->pixels[buf_sel];
     uint32_t        pitch = plane->pitch;
 
-    for (y = 0; y < plane->height; y++) {
+    dst_height = FFMIN(dst_height, plane->height);
+    for (y = 0; y < dst_height; y++) {
         /* convert four pixels at once using SWAR */
         for (x = 0; x < plane->width >> 2; x++) {
             AV_WN32A(dst, (AV_RN32A(src) & 0x7F7F7F7F) << 1);
@@ -1036,7 +1042,7 @@ static av_cold int decode_init(AVCodecContext *avctx)
     Indeo3DecodeContext *ctx = avctx->priv_data;
 
     ctx->avctx     = avctx;
-    avctx->pix_fmt = PIX_FMT_YUV410P;
+    avctx->pix_fmt = AV_PIX_FMT_YUV410P;
     avcodec_get_frame_defaults(&ctx->frame);
 
     build_requant_tab();
@@ -1098,9 +1104,15 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *data_size,
         return res;
     }
 
-    output_plane(&ctx->planes[0], ctx->buf_sel, ctx->frame.data[0], ctx->frame.linesize[0]);
-    output_plane(&ctx->planes[1], ctx->buf_sel, ctx->frame.data[1], ctx->frame.linesize[1]);
-    output_plane(&ctx->planes[2], ctx->buf_sel, ctx->frame.data[2], ctx->frame.linesize[2]);
+    output_plane(&ctx->planes[0], ctx->buf_sel,
+                 ctx->frame.data[0], ctx->frame.linesize[0],
+                 avctx->height);
+    output_plane(&ctx->planes[1], ctx->buf_sel,
+                 ctx->frame.data[1], ctx->frame.linesize[1],
+                 (avctx->height + 3) >> 2);
+    output_plane(&ctx->planes[2], ctx->buf_sel,
+                 ctx->frame.data[2], ctx->frame.linesize[2],
+                 (avctx->height + 3) >> 2);
 
     *data_size      = sizeof(AVFrame);
     *(AVFrame*)data = ctx->frame;
@@ -1129,5 +1141,6 @@ AVCodec ff_indeo3_decoder = {
     .init           = decode_init,
     .close          = decode_close,
     .decode         = decode_frame,
+    .capabilities   = CODEC_CAP_DR1,
     .long_name      = NULL_IF_CONFIG_SMALL("Intel Indeo 3"),
 };

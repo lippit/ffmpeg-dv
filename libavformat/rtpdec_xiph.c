@@ -27,11 +27,10 @@
  * @author Josh Allmann <joshua.allmann@gmail.com>
  */
 
+#include "libavutil/avassert.h"
 #include "libavutil/avstring.h"
 #include "libavutil/base64.h"
 #include "libavcodec/bytestream.h"
-
-#include <assert.h>
 
 #include "rtpdec.h"
 #include "rtpdec_formats.h"
@@ -183,7 +182,7 @@ static int xiph_handle_packet(AVFormatContext * ctx,
         data->timestamp = *timestamp;
 
     } else {
-        assert(fragmented < 4);
+        av_assert1(fragmented < 4);
         if (data->timestamp != *timestamp) {
             // skip if fragmented timestamp is incorrect;
             // a start packet has been lost somewhere
@@ -243,7 +242,7 @@ static int get_base128(const uint8_t ** buf, const uint8_t * buf_end)
 /**
  * Based off parse_packed_headers in Vorbis RTP
  */
-static unsigned int
+static int
 parse_packed_headers(const uint8_t * packed_headers,
                      const uint8_t * packed_headers_end,
                      AVCodecContext * codec, PayloadContext * xiph_data)
@@ -313,11 +312,11 @@ static int xiph_parse_fmtp_pair(AVStream* stream,
 
     if (!strcmp(attr, "sampling")) {
         if (!strcmp(value, "YCbCr-4:2:0")) {
-            codec->pix_fmt = PIX_FMT_YUV420P;
+            codec->pix_fmt = AV_PIX_FMT_YUV420P;
         } else if (!strcmp(value, "YCbCr-4:4:2")) {
-            codec->pix_fmt = PIX_FMT_YUV422P;
+            codec->pix_fmt = AV_PIX_FMT_YUV422P;
         } else if (!strcmp(value, "YCbCr-4:4:4")) {
-            codec->pix_fmt = PIX_FMT_YUV444P;
+            codec->pix_fmt = AV_PIX_FMT_YUV444P;
         } else {
             av_log(codec, AV_LOG_ERROR,
                    "Unsupported pixel format %s\n", attr);
