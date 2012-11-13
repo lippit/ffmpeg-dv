@@ -25,8 +25,8 @@
 
 #include <ctype.h>
 
-#include "libavutil/audioconvert.h"
 #include "libavutil/avstring.h"
+#include "libavutil/channel_layout.h"
 #include "libavutil/common.h"
 #include "libavutil/mathematics.h"
 #include "libavutil/opt.h"
@@ -125,7 +125,6 @@ static av_cold int channelmap_init(AVFilterContext *ctx, const char *args)
     ChannelMapContext *s = ctx->priv;
     int ret;
     char *mapping;
-    enum mode;
     int map_entries = 0;
     char buf[256];
     enum MappingMode mode;

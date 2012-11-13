@@ -78,6 +78,11 @@ const int program_birth_year = 2003;
 /* maximum audio speed change to get correct sync */
 #define SAMPLE_CORRECTION_PERCENT_MAX 10
 
+/* external clock speed adjustment constants for realtime sources based on buffer fullness */
+#define EXTERNAL_CLOCK_SPEED_MIN  0.900
+#define EXTERNAL_CLOCK_SPEED_MAX  1.010
+#define EXTERNAL_CLOCK_SPEED_STEP 0.001
+
 /* we use about AUDIO_DIFF_AVG_NB A-V differences to make the average */
 #define AUDIO_DIFF_AVG_NB   20
 
@@ -157,6 +162,7 @@ typedef struct VideoState {
     int64_t seek_rel;
     int read_pause_return;
     AVFormatContext *ic;
+    int realtime;
 
     int audio_stream;
 
@@ -164,6 +170,7 @@ typedef struct VideoState {
     double external_clock;                   ///< external clock base
     double external_clock_drift;             ///< external clock base - time (av_gettime) at which we updated external_clock
     int64_t external_clock_time;             ///< last reference time
+    double external_clock_speed;             ///< speed of the external clock
 
     double audio_clock;
     double audio_diff_cum; /* used for AV difference average computation */
@@ -234,6 +241,7 @@ typedef struct VideoState {
 #if !CONFIG_AVFILTER
     struct SwsContext *img_convert_ctx;
 #endif
+    SDL_Rect last_display_rect;
 
     char filename[1024];
     int width, height, xleft, ytop;
@@ -449,7 +457,7 @@ static int packet_queue_get(PacketQueue *q, AVPacket *pkt, int block, int *seria
 }
 
 static inline void fill_rectangle(SDL_Surface *screen,
-                                  int x, int y, int w, int h, int color)
+                                  int x, int y, int w, int h, int color, int update)
 {
     SDL_Rect rect;
     rect.x = x;
@@ -457,6 +465,44 @@ static inline void fill_rectangle(SDL_Surface *screen,
     rect.w = w;
     rect.h = h;
     SDL_FillRect(screen, &rect, color);
+    if (update && w > 0 && h > 0)
+        SDL_UpdateRect(screen, x, y, w, h);
+}
+
+/* draw only the border of a rectangle */
+static void fill_border(int xleft, int ytop, int width, int height, int x, int y, int w, int h, int color, int update)
+{
+    int w1, w2, h1, h2;
+
+    /* fill the background */
+    w1 = x;
+    if (w1 < 0)
+        w1 = 0;
+    w2 = width - (x + w);
+    if (w2 < 0)
+        w2 = 0;
+    h1 = y;
+    if (h1 < 0)
+        h1 = 0;
+    h2 = height - (y + h);
+    if (h2 < 0)
+        h2 = 0;
+    fill_rectangle(screen,
+                   xleft, ytop,
+                   w1, height,
+                   color, update);
+    fill_rectangle(screen,
+                   xleft + width - w2, ytop,
+                   w2, height,
+                   color, update);
+    fill_rectangle(screen,
+                   xleft + w1, ytop,
+                   width - w1 - w2, h1,
+                   color, update);
+    fill_rectangle(screen,
+                   xleft + w1, ytop + height - h2,
+                   width - w1 - w2, h2,
+                   color, update);
 }
 
 #define ALPHA_BLEND(a, oldp, newp, s)\
@@ -759,6 +805,12 @@ static void video_image_display(VideoState *is)
         calculate_display_rect(&rect, is->xleft, is->ytop, is->width, is->height, vp);
 
         SDL_DisplayYUVOverlay(vp->bmp, &rect);
+
+        if (rect.x != is->last_display_rect.x || rect.y != is->last_display_rect.y || rect.w != is->last_display_rect.w || rect.h != is->last_display_rect.h || is->force_refresh) {
+            int bgcolor = SDL_MapRGB(screen->format, 0x00, 0x00, 0x00);
+            fill_border(is->xleft, is->ytop, is->width, is->height, rect.x, rect.y, rect.w, rect.h, bgcolor, 1);
+            is->last_display_rect = rect;
+        }
     }
 }
 
@@ -824,7 +876,7 @@ static void video_audio_display(VideoState *s)
     if (s->show_mode == SHOW_MODE_WAVES) {
         fill_rectangle(screen,
                        s->xleft, s->ytop, s->width, s->height,
-                       bgcolor);
+                       bgcolor, 0);
 
         fgcolor = SDL_MapRGB(screen->format, 0xff, 0xff, 0xff);
 
@@ -845,7 +897,7 @@ static void video_audio_display(VideoState *s)
                 }
                 fill_rectangle(screen,
                                s->xleft + x, ys, 1, y,
-                               fgcolor);
+                               fgcolor, 0);
                 i += channels;
                 if (i >= SAMPLE_ARRAY_SIZE)
                     i -= SAMPLE_ARRAY_SIZE;
@@ -858,7 +910,7 @@ static void video_audio_display(VideoState *s)
             y = s->ytop + ch * h;
             fill_rectangle(screen,
                            s->xleft, y, s->width, 1,
-                           fgcolor);
+                           fgcolor, 0);
         }
         SDL_UpdateRect(screen, s->xleft, s->ytop, s->width, s->height);
     } else {
@@ -896,7 +948,7 @@ static void video_audio_display(VideoState *s)
 
                 fill_rectangle(screen,
                             s->xpos, s->height-y, 1, 1,
-                            fgcolor);
+                            fgcolor, 0);
             }
         }
         SDL_UpdateRect(screen, s->xpos, s->ytop, 1, s->height);
@@ -1062,7 +1114,8 @@ static double get_external_clock(VideoState *is)
     if (is->paused) {
         return is->external_clock;
     } else {
-        return is->external_clock_drift + av_gettime() / 1000000.0;
+        double time = av_gettime() / 1000000.0;
+        return is->external_clock_drift + time - (time - is->external_clock_time / 1000000.0) * (1.0 - is->external_clock_speed);
     }
 }
 
@@ -1112,6 +1165,25 @@ static void check_external_clock_sync(VideoState *is, double pts) {
     if (fabs(get_external_clock(is) - pts) > AV_NOSYNC_THRESHOLD) {
         update_external_clock_pts(is, pts);
     }
+}
+
+static void update_external_clock_speed(VideoState *is, double speed) {
+    update_external_clock_pts(is, get_external_clock(is));
+    is->external_clock_speed = speed;
+}
+
+static void check_external_clock_speed(VideoState *is) {
+   if (is->video_stream >= 0 && is->videoq.nb_packets <= MIN_FRAMES / 2 ||
+       is->audio_stream >= 0 && is->audioq.nb_packets <= MIN_FRAMES / 2) {
+       update_external_clock_speed(is, FFMAX(EXTERNAL_CLOCK_SPEED_MIN, is->external_clock_speed - EXTERNAL_CLOCK_SPEED_STEP));
+   } else if ((is->video_stream < 0 || is->videoq.nb_packets > MIN_FRAMES * 2) &&
+              (is->audio_stream < 0 || is->audioq.nb_packets > MIN_FRAMES * 2)) {
+       update_external_clock_speed(is, FFMIN(EXTERNAL_CLOCK_SPEED_MAX, is->external_clock_speed + EXTERNAL_CLOCK_SPEED_STEP));
+   } else {
+       double speed = is->external_clock_speed;
+       if (speed != 1.0)
+           update_external_clock_speed(is, speed + EXTERNAL_CLOCK_SPEED_STEP * (1.0 - speed) / fabs(1.0 - speed));
+   }
 }
 
 /* seek in the stream */
@@ -1215,6 +1287,9 @@ static void video_refresh(void *opaque)
     double time;
 
     SubPicture *sp, *sp2;
+
+    if (!is->paused && get_master_sync_type(is) == AV_SYNC_EXTERNAL_CLOCK && is->realtime)
+        check_external_clock_speed(is);
 
     if (is->video_st) {
         if (is->force_refresh)
@@ -1636,7 +1711,7 @@ static int configure_filtergraph(AVFilterGraph *graph, const char *filtergraph,
             goto fail;
     }
 
-    return avfilter_graph_config(graph, NULL);
+    ret = avfilter_graph_config(graph, NULL);
 fail:
     avfilter_inout_free(&outputs);
     avfilter_inout_free(&inputs);
@@ -1650,8 +1725,11 @@ static int configure_video_filters(AVFilterGraph *graph, VideoState *is, const c
     char buffersrc_args[256];
     int ret;
     AVBufferSinkParams *buffersink_params = av_buffersink_params_alloc();
-    AVFilterContext *filt_src = NULL, *filt_out = NULL, *filt_format, *filt_crop;
+    AVFilterContext *filt_src = NULL, *filt_out = NULL, *filt_crop;
     AVCodecContext *codec = is->video_st->codec;
+
+    if (!buffersink_params)
+        return AVERROR(ENOMEM);
 
     snprintf(sws_flags_str, sizeof(sws_flags_str), "flags=%d", sws_flags);
     graph->scale_sws_opts = av_strdup(sws_flags_str);
@@ -1666,37 +1744,32 @@ static int configure_video_filters(AVFilterGraph *graph, VideoState *is, const c
                                             avfilter_get_by_name("buffer"),
                                             "ffplay_buffer", buffersrc_args, NULL,
                                             graph)) < 0)
-        return ret;
+        goto fail;
 
     buffersink_params->pixel_fmts = pix_fmts;
     ret = avfilter_graph_create_filter(&filt_out,
                                        avfilter_get_by_name("ffbuffersink"),
                                        "ffplay_buffersink", NULL, buffersink_params, graph);
-    av_freep(&buffersink_params);
     if (ret < 0)
-        return ret;
+        goto fail;
 
     /* SDL YUV code is not handling odd width/height for some driver
      * combinations, therefore we crop the picture to an even width/height. */
     if ((ret = avfilter_graph_create_filter(&filt_crop,
                                             avfilter_get_by_name("crop"),
                                             "ffplay_crop", "floor(in_w/2)*2:floor(in_h/2)*2", NULL, graph)) < 0)
-        return ret;
-    if ((ret = avfilter_graph_create_filter(&filt_format,
-                                            avfilter_get_by_name("format"),
-                                            "format", "yuv420p", NULL, graph)) < 0)
-        return ret;
-    if ((ret = avfilter_link(filt_crop, 0, filt_format, 0)) < 0)
-        return ret;
-    if ((ret = avfilter_link(filt_format, 0, filt_out, 0)) < 0)
-        return ret;
+        goto fail;
+    if ((ret = avfilter_link(filt_crop, 0, filt_out, 0)) < 0)
+        goto fail;
 
     if ((ret = configure_filtergraph(graph, vfilters, filt_src, filt_crop)) < 0)
-        return ret;
+        goto fail;
 
     is->in_video_filter  = filt_src;
     is->out_video_filter = filt_out;
 
+fail:
+    av_freep(&buffersink_params);
     return ret;
 }
 
@@ -2234,7 +2307,6 @@ static int stream_component_open(VideoState *is, int stream_index)
     avctx = ic->streams[stream_index]->codec;
 
     codec = avcodec_find_decoder(avctx->codec_id);
-    opts = filter_codec_opts(codec_opts, avctx->codec_id, ic, ic->streams[stream_index], codec);
 
     switch(avctx->codec_type){
         case AVMEDIA_TYPE_AUDIO   : is->last_audio_stream    = stream_index; if(audio_codec_name   ) codec= avcodec_find_decoder_by_name(   audio_codec_name); break;
@@ -2262,10 +2334,10 @@ static int stream_component_open(VideoState *is, int stream_index)
     if(codec->capabilities & CODEC_CAP_DR1)
         avctx->flags |= CODEC_FLAG_EMU_EDGE;
 
+    opts = filter_codec_opts(codec_opts, avctx->codec_id, ic, ic->streams[stream_index], codec);
     if (!av_dict_get(opts, "threads", NULL, 0))
         av_dict_set(&opts, "threads", "auto", 0);
-    if (!codec ||
-        avcodec_open2(avctx, codec, &opts) < 0)
+    if (avcodec_open2(avctx, codec, &opts) < 0)
         return -1;
     if ((t = av_dict_get(opts, "", NULL, AV_DICT_IGNORE_SUFFIX))) {
         av_log(NULL, AV_LOG_ERROR, "Option %s not found.\n", t->key);
@@ -2500,6 +2572,8 @@ static int read_thread(void *arg)
         }
     }
 
+    is->realtime = is_realtime(ic);
+
     for (i = 0; i < ic->nb_streams; i++)
         ic->streams[i]->discard = AVDISCARD_ALL;
     if (!video_disable)
@@ -2549,7 +2623,7 @@ static int read_thread(void *arg)
         goto fail;
     }
 
-    if (infinite_buffer < 0 && is_realtime(ic))
+    if (infinite_buffer < 0 && is->realtime)
         infinite_buffer = 1;
 
     for (;;) {
@@ -2727,6 +2801,7 @@ static VideoState *stream_open(const char *filename, AVInputFormat *iformat)
     is->continue_read_thread = SDL_CreateCond();
 
     update_external_clock_pts(is, 0.0);
+    update_external_clock_speed(is, 1.0);
     is->audio_current_pts_drift = -av_gettime() / 1000000.0;
     is->video_current_pts_drift = is->audio_current_pts_drift;
     is->av_sync_type = av_sync_type;
@@ -2828,8 +2903,7 @@ static void toggle_audio_display(VideoState *is)
     is->show_mode = (is->show_mode + 1) % SHOW_MODE_NB;
     fill_rectangle(screen,
                 is->xleft, is->ytop, is->width, is->height,
-                bgcolor);
-    SDL_UpdateRect(screen, is->xleft, is->ytop, is->width, is->height);
+                bgcolor, 1);
 }
 
 /* handle an event sent by the GUI */

@@ -40,6 +40,7 @@
  * CODEC SUPPORT: Only ATRAC3 codec is currently supported!
  */
 
+#include "libavutil/channel_layout.h"
 #include "avformat.h"
 #include "internal.h"
 #include "libavutil/intreadwrite.h"
@@ -159,7 +160,7 @@ static int nprobe(AVFormatContext *s, uint8_t *enc_header, int size, const uint8
     taglen = AV_RB32(&enc_header[pos+32]);
     datalen = AV_RB32(&enc_header[pos+36]) >> 4;
 
-    if(taglen + (((uint64_t)datalen)<<4) + 44 > size)
+    if(pos + (uint64_t)taglen + (((uint64_t)datalen)<<4) + 44 > size)
         return -1;
 
     pos += 44 + taglen;
@@ -318,6 +319,7 @@ static int oma_read_header(AVFormatContext *s)
             framesize = (codec_params & 0x3FF) * 8;
             jsflag = (codec_params >> 17) & 1; /* get stereo coding mode, 1 for joint-stereo */
             st->codec->channels    = 2;
+            st->codec->channel_layout = AV_CH_LAYOUT_STEREO;
             st->codec->sample_rate = samplerate;
             st->codec->bit_rate    = st->codec->sample_rate * framesize * 8 / 1024;
 
@@ -352,6 +354,7 @@ static int oma_read_header(AVFormatContext *s)
         case OMA_CODECID_LPCM:
             /* PCM 44.1 kHz 16 bit stereo big-endian */
             st->codec->channels = 2;
+            st->codec->channel_layout = AV_CH_LAYOUT_STEREO;
             st->codec->sample_rate = 44100;
             framesize = 1024;
             /* bit rate = sample rate x PCM block align (= 4) x 8 */

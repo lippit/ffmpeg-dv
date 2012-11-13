@@ -43,7 +43,7 @@
 #include "libswscale/swscale.h"
 #include "libswresample/swresample.h"
 #include "libavutil/opt.h"
-#include "libavutil/audioconvert.h"
+#include "libavutil/channel_layout.h"
 #include "libavutil/parseutils.h"
 #include "libavutil/samplefmt.h"
 #include "libavutil/colorspace.h"
@@ -69,6 +69,7 @@
 # include "libavfilter/buffersink.h"
 
 #if HAVE_SYS_RESOURCE_H
+#include <sys/time.h>
 #include <sys/types.h>
 #include <sys/resource.h>
 #elif HAVE_GETPROCESSTIMES
@@ -108,7 +109,7 @@ const int program_birth_year = 2000;
 
 static FILE *vstats_file;
 
-static void do_video_stats(AVFormatContext *os, OutputStream *ost, int frame_size);
+static void do_video_stats(OutputStream *ost, int frame_size);
 static int64_t getutime(void);
 
 static int run_as_daemon  = 0;
@@ -920,7 +921,7 @@ static void do_video_out(AVFormatContext *s,
   }
 
     if (vstats_filename && frame_size)
-        do_video_stats(output_files[ost->file_index]->ctx, ost, frame_size);
+        do_video_stats(ost, frame_size);
 }
 
 static double psnr(double d)
@@ -928,8 +929,7 @@ static double psnr(double d)
     return -10.0 * log(d) / log(10.0);
 }
 
-static void do_video_stats(AVFormatContext *os, OutputStream *ost,
-                           int frame_size)
+static void do_video_stats(OutputStream *ost, int frame_size)
 {
     AVCodecContext *enc;
     int frame_number;
@@ -1081,10 +1081,14 @@ static void print_report(int is_last_report, int64_t timer_start, int64_t cur_ti
     oc = output_files[0]->ctx;
 
     total_size = avio_size(oc->pb);
-    if (total_size < 0) { // FIXME improve avio_size() so it works with non seekable output too
+    if (total_size <= 0) // FIXME improve avio_size() so it works with non seekable output too
         total_size = avio_tell(oc->pb);
-        if (total_size < 0)
-            total_size = 0;
+    if (total_size < 0) {
+        char errbuf[128];
+        av_strerror(total_size, errbuf, sizeof(errbuf));
+        av_log(NULL, AV_LOG_VERBOSE, "Bitrate not available, "
+               "avio_tell() failed: %s\n", errbuf);
+        total_size = 0;
     }
 
     buf[0] = '\0';
@@ -1122,7 +1126,7 @@ static void print_report(int is_last_report, int64_t timer_start, int64_t cur_ti
                 for (j = 0; j < 32; j++)
                     snprintf(buf + strlen(buf), sizeof(buf) - strlen(buf), "%X", (int)lrintf(log2(qp_histogram[j] + 1)));
             }
-            if (enc->flags&CODEC_FLAG_PSNR) {
+            if ((enc->flags&CODEC_FLAG_PSNR) && (enc->coded_frame || is_last_report)) {
                 int j;
                 double error, error_sum = 0;
                 double scale, scale_sum = 0;
@@ -1285,6 +1289,8 @@ static void flush_encoders(void)
                     pkt.pts = av_rescale_q(pkt.pts, enc->time_base, ost->st->time_base);
                 if (pkt.dts != AV_NOPTS_VALUE)
                     pkt.dts = av_rescale_q(pkt.dts, enc->time_base, ost->st->time_base);
+                if (pkt.duration > 0)
+                    pkt.duration = av_rescale_q(pkt.duration, enc->time_base, ost->st->time_base);
                 write_frame(os, &pkt, ost);
             }
 
@@ -1355,6 +1361,15 @@ static void do_streamcopy(InputStream *ist, OutputStream *ost, const AVPacket *p
         opkt.dts = av_rescale_q(pkt->dts, ist->st->time_base, ost->st->time_base);
     opkt.dts -= ost_tb_start_time;
 
+    if (ost->st->codec->codec_type == AVMEDIA_TYPE_AUDIO && pkt->dts != AV_NOPTS_VALUE) {
+        int duration = av_get_audio_frame_duration(ist->st->codec, pkt->size);
+        if(!duration)
+            duration = ist->st->codec->frame_size;
+        opkt.dts = opkt.pts = av_rescale_delta(ist->st->time_base, pkt->dts,
+                                               (AVRational){1, ist->st->codec->sample_rate}, duration, &ist->filter_in_rescale_delta_last,
+                                               ost->st->time_base);
+    }
+
     opkt.duration = av_rescale_q(pkt->duration, ist->st->time_base, ost->st->time_base);
     opkt.flags    = pkt->flags;
 
@@ -1381,7 +1396,6 @@ static void do_streamcopy(InputStream *ist, OutputStream *ost, const AVPacket *p
 
     write_frame(of->ctx, &opkt, ost);
     ost->st->codec->frame_number++;
-    av_free_packet(&opkt);
 }
 
 static void rate_emu_sleep(InputStream *ist)
@@ -1421,8 +1435,6 @@ static int decode_audio(InputStream *ist, AVPacket *pkt, int *got_output)
 
     if (!ist->decoded_frame && !(ist->decoded_frame = avcodec_alloc_frame()))
         return AVERROR(ENOMEM);
-    else
-        avcodec_get_frame_defaults(ist->decoded_frame);
     decoded_frame = ist->decoded_frame;
 
     update_benchmark(NULL);
@@ -1522,9 +1534,9 @@ static int decode_audio(InputStream *ist, AVPacket *pkt, int *got_output)
         decoded_frame_tb   = AV_TIME_BASE_Q;
     }
     if (decoded_frame->pts != AV_NOPTS_VALUE)
-        decoded_frame->pts = av_rescale_q(decoded_frame->pts,
-                                          decoded_frame_tb,
-                                          (AVRational){1, ist->st->codec->sample_rate});
+        decoded_frame->pts = av_rescale_delta(decoded_frame_tb, decoded_frame->pts,
+                                              (AVRational){1, ist->st->codec->sample_rate}, decoded_frame->nb_samples, &ist->filter_in_rescale_delta_last,
+                                              (AVRational){1, ist->st->codec->sample_rate});
     for (i = 0; i < ist->nb_filters; i++)
         av_buffersrc_add_frame(ist->filters[i]->filter, decoded_frame,
                                AV_BUFFERSRC_FLAG_PUSH);
@@ -1544,8 +1556,6 @@ static int decode_video(InputStream *ist, AVPacket *pkt, int *got_output)
 
     if (!ist->decoded_frame && !(ist->decoded_frame = avcodec_alloc_frame()))
         return AVERROR(ENOMEM);
-    else
-        avcodec_get_frame_defaults(ist->decoded_frame);
     decoded_frame = ist->decoded_frame;
     pkt->dts  = av_rescale_q(ist->dts, AV_TIME_BASE_Q, ist->st->time_base);
 
@@ -1729,7 +1739,7 @@ static int output_packet(InputStream *ist, const AVPacket *pkt)
     if (pkt->dts != AV_NOPTS_VALUE) {
         ist->next_dts = ist->dts = av_rescale_q(pkt->dts, ist->st->time_base, AV_TIME_BASE_Q);
         if (ist->st->codec->codec_type != AVMEDIA_TYPE_VIDEO || !ist->decoding_needed)
-            ist->next_pts = ist->pts = av_rescale_q(pkt->dts, ist->st->time_base, AV_TIME_BASE_Q);
+            ist->next_pts = ist->pts = ist->dts;
     }
 
     // while we have more to decode or while the decoder did output something on EOF

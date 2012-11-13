@@ -31,8 +31,6 @@
 #include "mathops.h"
 #include "pcm_tablegen.h"
 
-#define MAX_CHANNELS 64
-
 static av_cold int pcm_encode_init(AVCodecContext *avctx)
 {
     avctx->frame_size = 0;
@@ -208,7 +206,7 @@ static av_cold int pcm_decode_init(AVCodecContext *avctx)
     PCMDecode *s = avctx->priv_data;
     int i;
 
-    if (avctx->channels <= 0 || avctx->channels > MAX_CHANNELS) {
+    if (avctx->channels <= 0) {
         av_log(avctx, AV_LOG_ERROR, "PCM channels out of bounds\n");
         return AVERROR(EINVAL);
     }
@@ -290,6 +288,11 @@ static int pcm_decode_frame(AVCodecContext *avctx, void *data,
         return AVERROR(EINVAL);
     }
 
+    if (avctx->channels == 0) {
+        av_log(avctx, AV_LOG_ERROR, "Invalid number of channels\n");
+        return AVERROR(EINVAL);
+    }
+
     n = avctx->channels * sample_size;
 
     if (n && buf_size % n) {
@@ -345,7 +348,7 @@ static int pcm_decode_frame(AVCodecContext *avctx, void *data,
         int i;
         n /= avctx->channels;
         for (c = 0; c < avctx->channels; c++) {
-            samples = s->frame.data[c];
+            samples = s->frame.extended_data[c];
             for (i = n; i > 0; i--) {
                 AV_WN16A(samples, bytestream_get_le16(&src));
                 samples += 2;

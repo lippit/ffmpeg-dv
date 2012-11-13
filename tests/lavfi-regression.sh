@@ -60,7 +60,7 @@ do_lavfi "select"             "select=not(eq(mod(n\,2)\,0)+eq(mod(n\,3)\,0))"
 do_lavfi "setdar"             "setdar=16/9"
 do_lavfi "setsar"             "setsar=16/11"
 do_lavfi "thumbnail"          "thumbnail=10"
-do_lavfi "tile"               "tile=3x3"
+do_lavfi "tile"               "tile=3x3:nb_frames=5:padding=7:margin=2"
 do_lavfi "transpose"          "transpose"
 do_lavfi "unsharp"            "unsharp=10:10:-1.5:10:10:-1.5"
 do_lavfi "vflip"              "vflip"
@@ -111,6 +111,7 @@ do_lavfi_pixfmts(){
 do_lavfi_pixfmts "copy"    ""
 do_lavfi_pixfmts "crop"    "100:100:100:100"
 do_lavfi_pixfmts "hflip"   ""
+do_lavfi_pixfmts "field"   "field" "bottom"
 do_lavfi_pixfmts "null"    ""
 do_lavfi_pixfmts "pad"     "500:400:20:20"
 do_lavfi_pixfmts "pixdesctest" ""
@@ -132,6 +133,7 @@ do_lavfi_lavd() {
 
 do_lavfi_lavd "life"                 "life=s=40x40:r=5:seed=42:mold=64" -t 2
 do_lavfi_lavd "testsrc"              "testsrc=r=7:n=2:d=10"
+do_lavfi_lavd "scalenorm"            "sws_flags=+accurate_rnd+bitexact;testsrc=s=128x96:d=1:r=5,format=yuv420p[a];testsrc=s=160x120:d=1:r=5[b];[a][b]concat=unsafe=1,scale=flags=+accurate_rnd+bitexact"
 
 # TODO: add tests for
 # direct rendering,
